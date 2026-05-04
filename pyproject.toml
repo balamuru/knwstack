@@ -1,0 +1,17 @@
+[project]
+name = "knwstack"
+version = "0.1.0"
+description = "A high-performance, low-latency reference architecture for real-time AI inference."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "bytewax>=0.20.0",
+    "nats-py>=2.8.0",
+    "litellm>=1.35.0",
+    "pydantic>=2.7.0",
+    "asyncio>=3.4.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
