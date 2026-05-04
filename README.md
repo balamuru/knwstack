@@ -34,6 +34,7 @@ Conversely, enterprise stream-processing engines are incredibly fast but rigidly
 *   **Multi-Tenant Concurrency:** Safely process multiple independent use cases (e.g., weather telemetry and financial ticks) concurrently on the same infrastructure using strict topic isolation.
 *   **Stateful CEP Joins:** Synchronize and aggregate multiple streams (e.g., temperature + wind) within precise time windows before triggering rules or prompts.
 *   **MCP Tool Integration:** The Strategic Path supports the **Model Context Protocol (MCP)**. LLMs can dynamically call external tools (databases, APIs, internal services) during their asynchronous reasoning loop to gather missing context before returning a decision to the stream.
+*   **Synthesis & Feedback Loops:** KnwStack natively supports routing actions back into itself. The Bytewax engine can consume both the immediate Reflex actions and the delayed Strategic LLM reasoning to form a unified, correlated synthesis decision.
 *   **Developer-First Abstractions:** Write high-performance routing logic in pure Python using simple decorators (`@reflex_rule`, `@strategic_prompt`).
 
 ## The Technology Stack
@@ -72,6 +73,7 @@ python -m knwstack.engine
 ```text
 knwstack/
 ├── docs/                 # Architecture and design documentation
+├── scripts/              # Developer utilities (App Scaffolder, Event Injector)
 ├── src/
 │   └── knwstack/
 │       ├── api/          # Developer abstractions (@reflex_rule, etc.)

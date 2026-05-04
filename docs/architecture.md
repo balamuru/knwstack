@@ -110,6 +110,38 @@ sequenceDiagram
     Note over W1,W2: State and AI contexts are strictly isolated by Tenant ID
 ```
 
+### 3.3 Synthesis & Feedback Loops (Correlation)
+
+While the fundamental architecture acts as a "Fan-Out" (executing fast rules and slow LLM prompts in parallel), KnwStack natively supports **Correlation and Synthesis**. Because all execution paths publish their decisions back onto NATS JetStream (e.g., `actions.reflex` and `actions.strategic`), the framework can subscribe to its own output stream. 
+
+By feeding the output streams back into a CEP Window, the engine can correlate the immediate physical reflex with the delayed AI reasoning to form a unified, synthesized decision.
+
+```mermaid
+sequenceDiagram
+    participant S as Sensor Stream
+    participant N as NATS Broker
+    participant E as KnwStack Engine
+    participant LLM as Cloud LLM
+    
+    S->>N: Telemetry Data
+    N->>E: Consume
+    
+    par Fan-Out Execution
+        E->>N: Publish Fast Action (`actions.reflex`)
+        E->>LLM: Request Deep Analysis
+    end
+    
+    LLM-->>E: Return Analysis
+    E->>N: Publish Slow Action (`actions.strategic`)
+    
+    Note over N,E: Feedback Loop: Engine consumes its own Actions
+    
+    N->>E: Consume `actions.reflex`
+    N->>E: Consume `actions.strategic`
+    E->>E: Window CEP Join: Correlate Reflex + Strategic
+    E->>N: Publish Unified Synthesis (`actions.synthesis`)
+```
+
 ## 4. Key Design Decisions
 
 ### 4.1 Messaging: NATS JetStream over Apache Kafka
