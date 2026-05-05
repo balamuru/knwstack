@@ -52,17 +52,27 @@ Read the full [Architecture Design Document](docs/architecture.md) for detailed 
 
 ## NATS Infrastructure Setup
 
-KnwStack relies on **NATS JetStream** for high-performance, persistent messaging. Correct configuration is critical for multi-tenant load balancing and exactly-once delivery.
+KnwStack relies on **NATS JetStream** for high-performance, persistent messaging.
 
-### 1. Start the NATS Server
-For local development, start the server with JetStream enabled:
+### 1. Installation
+The easiest way to get started is via **Docker Compose**. Alternatively, you can download the binary for your OS.
+
+*   **Docker (Recommended):** Ensure you have [Docker](https://docs.docker.com/get-docker/) installed.
+*   **Manual Binary:** Download the `nats-server` and `nats` CLI from the [Official NATS Download Page](https://nats.io/download/).
+
+### 2. Start the NATS Server
+
+#### Option A: Docker Compose (Recommended)
+Run the following command from the project root to start a persistent, JetStream-enabled NATS instance in the background:
+
 ```bash
-nats-server -js
+docker compose up -d
 ```
 
-For production-like persistence, use a configuration file:
+#### Option B: Manual Binary
+If running locally without Docker, start the server with JetStream enabled:
 ```bash
-nats-server -c nats.conf
+nats-server -js
 ```
 
 **Example `nats.conf`:**
