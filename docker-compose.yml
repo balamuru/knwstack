@@ -10,5 +10,16 @@ services:
       - nats_data:/data
     restart: always
 
+  nui:
+    image: ghcr.io/nats-nui/nui:latest
+    container_name: knwstack-nui
+    ports:
+      - "3131:3131"
+    environment:
+      - NUI_NATS_URL=nats://nats:4222
+    depends_on:
+      - nats
+    restart: always
+
 volumes:
   nats_data:

@@ -63,11 +63,16 @@ The easiest way to get started is via **Docker Compose**. Alternatively, you can
 ### 2. Start the NATS Server
 
 #### Option A: Docker Compose (Recommended)
-Run the following command from the project root to start a persistent, JetStream-enabled NATS instance in the background:
+Run the following command from the project root to start the NATS infrastructure:
 
 ```bash
 docker compose up -d
 ```
+
+This starts:
+- **NATS Server**: Port `4222`
+- **NATS Monitoring**: [http://localhost:8222](http://localhost:8222)
+- **NATS Management UI (NUI)**: [http://localhost:3131](http://localhost:3131) — Use this to visually manage streams, consumers, and messages.
 
 #### Option B: Manual Binary
 If running locally without Docker, start the server with JetStream enabled:
