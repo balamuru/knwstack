@@ -21,5 +21,15 @@ services:
       - nats
     restart: always
 
+  nats-box:
+    image: natsio/nats-box:latest
+    container_name: knwstack-nats-box
+    command: "sleep infinity"
+    environment:
+      - NATS_URL=nats://nats:4222
+    depends_on:
+      - nats
+    restart: always
+
 volumes:
   nats_data:

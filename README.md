@@ -102,15 +102,16 @@ If using Docker Compose, this is the easiest method.
 If you are running the Docker Compose setup but prefer the terminal, you can use the official `nats-box` utility container, which comes pre-installed with the CLI and connects to your Docker network:
 
 ```bash
-docker run --network knwstack_default --rm -it natsio/nats-box nats --server nats://knwstack-nats:4222 stream add KNWSTACK_STREAM \
+docker compose exec nats-box nats stream add KNWSTACK_STREAM \
     --subjects "app.>" \
     --storage file \
     --retention limits \
     --discard old \
-    --max-msgs -1 \
-    --max-bytes -1 \
-    --max-age 1h \
-    --dupe-window 2m
+    --max-msgs=-1 \
+    --max-bytes=-1 \
+    --max-age=1h \
+    --dupe-window=2m \
+    --defaults
 ```
 
 #### Option C: Using Local CLI
@@ -121,10 +122,11 @@ nats stream add KNWSTACK_STREAM \
     --storage file \
     --retention limits \
     --discard old \
-    --max-msgs -1 \
-    --max-bytes -1 \
-    --max-age 1h \
-    --dupe-window 2m
+    --max-msgs=-1 \
+    --max-bytes=-1 \
+    --max-age=1h \
+    --dupe-window=2m \
+    --defaults
 ```
 
 ### 3. Messaging Patterns
