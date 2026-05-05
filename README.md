@@ -99,10 +99,10 @@ If using Docker Compose, this is the easiest method.
 3. Name it `KNWSTACK_STREAM` and add the subject `app.>`
 
 #### Option B: Using Docker CLI
-If you are running the Docker Compose setup but prefer the terminal, you can execute the `nats` CLI directly inside the container:
+If you are running the Docker Compose setup but prefer the terminal, you can use the official `nats-box` utility container, which comes pre-installed with the CLI and connects to your Docker network:
 
 ```bash
-docker exec -it knwstack-nats nats stream add KNWSTACK_STREAM \
+docker run --network knwstack_default --rm -it natsio/nats-box nats --server nats://knwstack-nats:4222 stream add KNWSTACK_STREAM \
     --subjects "app.>" \
     --storage file \
     --retention limits \
