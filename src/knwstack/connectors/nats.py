@@ -4,6 +4,9 @@ from nats.errors import ConnectionClosedError, TimeoutError, NoServersError
 from bytewax.inputs import DynamicSource, StatelessSourcePartition
 from bytewax.outputs import DynamicSink, StatelessSinkPartition
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 class NatsSourcePartition(StatelessSourcePartition):
     """
@@ -25,10 +28,13 @@ class NatsSourcePartition(StatelessSourcePartition):
         self.loop.run_until_complete(self._connect())
 
     async def _connect(self):
+        logger.info(f"NatsSource: Connecting to {self.nats_url}...")
         self.nc = await nats.connect(self.nats_url)
         self.js = self.nc.jetstream()
-        # Subscribe using a queue group for multi-tenant load balancing
-        self.sub = await self.js.subscribe(self.subject, queue=self.queue_group)
+        # Subscribe using a pull subscription for efficient batching and multi-tenant load balancing
+        logger.info(f"NatsSource: Subscribing to '{self.subject}' with durable '{self.queue_group}'")
+        self.sub = await self.js.pull_subscribe(self.subject, durable=self.queue_group)
+        logger.info("NatsSource: Connected and subscribed.")
 
     def next_batch(self):
         """Called by Bytewax to fetch the next batch of events."""
@@ -42,11 +48,12 @@ class NatsSourcePartition(StatelessSourcePartition):
                 # Parse JSON payload
                 data = json.loads(msg.data.decode())
                 # Yield tuple of (routing_key, event_data)
+                logger.debug(f"NatsSource: Received event on '{msg.subject}'")
                 batch.append((msg.subject, data))
         except TimeoutError:
             pass # No new messages
         except Exception as e:
-            print(f"Error fetching from NATS: {e}")
+            logger.error(f"Error fetching from NATS: {e}")
             
         return batch
 

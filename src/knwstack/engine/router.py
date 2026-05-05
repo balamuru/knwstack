@@ -1,5 +1,5 @@
 import bytewax.operators as op
-import bytewax.operators.window as wop
+import bytewax.operators.windowing as wop
 from bytewax.dataflow import Dataflow
 from litellm import completion
 import asyncio
@@ -8,6 +8,9 @@ import json
 from knwstack.connectors.nats import NatsSource, NatsSink
 from knwstack.api.decorators import registry
 from knwstack.state.windowing import get_cep_window_config
+import logging
+
+logger = logging.getLogger(__name__)
 
 def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "app.>", output_subject: str = "actions.>"):
     """
@@ -35,11 +38,13 @@ def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "
     clock, window = get_cep_window_config(window_size_seconds=1)
     
     # Collect all events for a tenant within the window into a list
-    windowed_stream = wop.collect_window("cep_join", keyed_stream, clock, window)
+    window_out = wop.collect_window("cep_join", keyed_stream, clock, window)
+    windowed_stream = window_out.down
 
     # 3. N-PATH ROUTER
     def execute_paths(window_data):
         tenant_id, (window_metadata, events) = window_data
+        logger.info(f"Engine: Processing window for tenant '{tenant_id}' with {len(events)} events.")
         actions_to_publish = []
         
         # Determine unique subjects present in this window to match rules
@@ -55,7 +60,7 @@ def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "
                     if action:
                         actions_to_publish.append((f"{output_subject}.reflex", action))
                 except Exception as e:
-                    print(f"Reflex Error: {e}")
+                    logger.error(f"Reflex Error: {e}")
 
         # --- PATH 2: TACTICAL (WARM) ---
         # Execute sub-100ms local ML models
@@ -66,16 +71,21 @@ def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "
                     if action:
                         actions_to_publish.append((f"{output_subject}.tactical", action))
                 except Exception as e:
-                    print(f"Tactical Error: {e}")
+                    logger.error(f"Tactical Error: {e}")
 
         # --- PATH 3: STRATEGIC (COLD) ---
-        # Instead of blocking the dataflow, we dispatch this to a background task
-        # Note: In a production Bytewax flow, you'd use a dedicated async operator,
-        # but for this reference architecture, asyncio.create_task handles the async 
-        # LLM call without blocking the engine's hot path thread.
         for prompt_cfg in registry.strategic_prompts:
             if prompt_cfg["topic"] in triggered_subjects:
-                asyncio.create_task(_execute_strategic_async(prompt_cfg, events, output_subject, nats_url))
+                # Run the strategic path in a background thread to avoid blocking the hot path
+                # and to provide a valid event loop for the async LLM call.
+                def _run_strategic():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(_execute_strategic_async(prompt_cfg, events, output_subject, nats_url))
+                    loop.close()
+                
+                import threading
+                threading.Thread(target=_run_strategic, daemon=True).start()
 
         return actions_to_publish
 
@@ -114,4 +124,4 @@ async def _execute_strategic_async(prompt_cfg, events, output_subject, nats_url)
         await nc.close()
         
     except Exception as e:
-        print(f"Strategic LLM Error: {e}")
+        logger.error(f"Strategic LLM Error: {e}")

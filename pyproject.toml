@@ -12,6 +12,9 @@ dependencies = [
     "asyncio>=3.4.3",
 ]
 
+[project.scripts]
+knwstack-scaffold = "knwstack.cli.scaffold:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
