@@ -72,7 +72,7 @@ docker compose up -d
 This starts:
 - **NATS Server**: Port `4222`
 - **NATS Monitoring**: [http://localhost:8222](http://localhost:8222)
-- **NATS Management UI (NUI)**: [http://localhost:3131](http://localhost:3131) — Use this to visually manage streams, consumers, and messages.
+- **NATS Management UI (NUI)**: [http://localhost:31311](http://localhost:31311) — Use this to visually manage streams, consumers, and messages.
 
 #### Option B: Manual Binary
 If running locally without Docker, start the server with JetStream enabled:
@@ -94,7 +94,7 @@ KnwStack requires a Stream to be defined for the subjects it consumes. You can c
 
 #### Option A: Using NUI (Web Interface)
 If using Docker Compose, this is the easiest method.
-1. Navigate to [http://localhost:3131](http://localhost:3131)
+1. Navigate to [http://localhost:31311](http://localhost:31311)
 2. Go to **JetStream** -> **Streams** -> **Add Stream**
 3. Name it `KNWSTACK_STREAM` and add the subject `app.>`
 
