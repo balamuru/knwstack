@@ -21,7 +21,7 @@ Conversely, enterprise stream-processing engines are incredibly fast but rigidly
 
 | Technology / Pattern | The "Gap" (What's Missing) | How KnwStack Solves It |
 | :--- | :--- | :--- |
-| **LangChain / LlamaIndex** | Built for stateful, request-response loops. Chokes on high-frequency continuous data (e.g., 60Hz telemetry). | KnwStack is **event-driven**. It buffers data and triggers the LLM asynchronously (harnessing **LiteLLM**) only when specific anomalies are detected, preventing rate-limit collapses. |
+| **LangChain / LlamaIndex** | Built for stateful, request-response loops. Chokes on high-frequency continuous data (e.g., 60Hz telemetry). | KnwStack is **event-driven**. It buffers data and triggers the LLM asynchronously (harnessing **LiteLLM** as a lightweight, multi-provider LLM router) only when specific anomalies are detected, preventing rate-limit collapses. |
 | **Apache Flink / Kafka Streams** | Excellent for sub-10ms streaming, but entirely deterministic. Cannot easily integrate non-deterministic LLMs inline without causing massive backpressure. | KnwStack implements a **Multi-Tier Router** powered by **Bytewax**. It runs deterministic rules on the Hot Path immediately, while offloading LLM calls to a non-blocking Cold Path. |
 | **Confluent Platform / Flink SQL** | *Can* call LLMs via Flink SQL connectors, but it remains infrastructure plumbing. Developers must manually architect the asynchronous logic, timeouts, and dual-paths in complex SQL or Java. | KnwStack provides an opinionated **Application-Layer Framework**. It gives developers simple Python abstractions (e.g., `@strategic_prompt`) that automatically handle the async LLM orchestration and cooldowns under the hood. |
 | **Standard Microservices** | Querying a database for historical context before every LLM call adds significant latency. | KnwStack maintains a rolling **In-Memory Context Window**. Handled natively by **Bytewax's** stateful windowing, the LLM immediately gets the last X seconds of data injected without manual cache management or database lookups. |
@@ -44,7 +44,7 @@ KnwStack prioritizes extreme performance and a premium AI developer experience b
 
 *   **Messaging Backbone:** [NATS JetStream](https://nats.io/) (Ultra-lightweight, exact-once delivery, Go)
 *   **Stream Engine & State:** [Bytewax](https://bytewax.io/) (Python API over Rust's Timely Dataflow)
-*   **AI Orchestration:** [LiteLLM](https://docs.litellm.ai/) (Unified interface for 100+ LLMs)
+*   **AI Orchestration:** [LiteLLM](https://docs.litellm.ai/) (Acts as a lightweight LLM API router, providing a unified interface to 100+ LLMs without the overhead of heavy prompt-chaining libraries)
 
 ## Architecture
 
