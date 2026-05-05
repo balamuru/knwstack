@@ -20,11 +20,11 @@ graph TD
     S2[Market Ticks] -->|JSON/Protobuf| NATS
     S3[App Logs] -->|JSON/Protobuf| NATS
 
-    subgraph Messaging Backbone
+    subgraph messaging_backbone ["Messaging Backbone"]
         NATS[(NATS JetStream)]
     end
 
-    subgraph KnwStack Engine [KnwStack Bytewax Engine (Rust/Python)]
+    subgraph knwstack_engine ["KnwStack Bytewax Engine (Rust/Python)"]
         Ingest[Input Connector] --> Router{Multi-Tier Router}
         
         %% State Management
@@ -32,11 +32,11 @@ graph TD
         Router <--> State
         
         %% The Paths
-        Router -->|Hot| Reflex[Reflex Rules <br> <10ms]
-        Router -->|Warm| Tactical[Tactical Models <br> <100ms]
+        Router -->|Hot| Reflex["Reflex Rules <br> <10ms"]
+        Router -->|Warm| Tactical["Tactical Models <br> <100ms"]
         Router -->|Cold| Batched[Event Batcher]
         
-        Batched --> Strategic[Strategic Prompts <br> LLM Orchestration]
+        Batched --> Strategic["Strategic Prompts <br> LLM Orchestration"]
     end
 
     %% External AI
@@ -59,10 +59,10 @@ The following sequence illustrates how KnwStack aggregates multiple streams (e.g
 
 ```mermaid
 sequenceDiagram
-    participant S as Sensor Stream
-    participant N as NATS Broker
-    participant E as KnwStack Engine
-    participant LLM as LiteLLM (Cloud)
+    participant S as "Sensor Stream"
+    participant N as "NATS Broker"
+    participant E as "KnwStack Engine"
+    participant LLM as "LiteLLM (Cloud)"
     
     S->>N: Publish Temp Event
     N->>E: Consume Temp Event
@@ -90,11 +90,11 @@ KnwStack supports executing entirely isolated business logic for different tenan
 
 ```mermaid
 sequenceDiagram
-    participant T1 as Tenant A (Weather)
-    participant T2 as Tenant B (Finance)
-    participant N as NATS JetStream
-    participant W1 as KnwStack Worker 1
-    participant W2 as KnwStack Worker 2
+    participant T1 as "Tenant A (Weather)"
+    participant T2 as "Tenant B (Finance)"
+    participant N as "NATS JetStream"
+    participant W1 as "KnwStack Worker 1"
+    participant W2 as "KnwStack Worker 2"
 
     T1->>N: weather.temp
     T2->>N: finance.tick
@@ -118,15 +118,15 @@ By feeding the output streams back into a CEP Window, the engine can correlate t
 
 ```mermaid
 sequenceDiagram
-    participant S as Sensor Stream
-    participant N as NATS Broker
-    participant E as KnwStack Engine
-    participant LLM as Cloud LLM
+    participant S as "Sensor Stream"
+    participant N as "NATS Broker"
+    participant E as "KnwStack Engine"
+    participant LLM as "Cloud LLM"
     
     S->>N: Telemetry Data
     N->>E: Consume
     
-    par Fan-Out Execution
+    par "Fan-Out Execution"
         E->>N: Publish Fast Action (`actions.reflex`)
         E->>LLM: Request Deep Analysis
     end

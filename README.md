@@ -50,21 +50,68 @@ KnwStack prioritizes extreme performance and a premium AI developer experience b
 
 Read the full [Architecture Design Document](docs/architecture.md) for detailed sequence diagrams, component breakdowns, and the rationale behind our design decisions.
 
+## NATS Infrastructure Setup
+
+KnwStack relies on **NATS JetStream** for high-performance, persistent messaging. Correct configuration is critical for multi-tenant load balancing and exactly-once delivery.
+
+### 1. Start the NATS Server
+For local development, start the server with JetStream enabled:
+```bash
+nats-server -js
+```
+
+For production-like persistence, use a configuration file:
+```bash
+nats-server -c nats.conf
+```
+
+**Example `nats.conf`:**
+```text
+jetstream {
+    store_dir: "/data/nats-jetstream"
+    max_mem: 1G
+    max_file: 10G
+}
+```
+
+### 2. Configure JetStream Streams
+KnwStack requires a Stream to be defined for the subjects it consumes. Use the `nats` CLI to create a stream that covers your tenant subjects.
+
+```bash
+# Create a stream for all application telemetry
+nats stream add KNWSTACK_STREAM \
+    --subjects "app.>" \
+    --storage file \
+    --retention limits \
+    --discard old \
+    --max-msgs -1 \
+    --max-bytes -1 \
+    --max-age 1h \
+    --dupe-window 2m
+```
+
+### 3. Messaging Patterns
+*   **Subject Hierarchy:** KnwStack uses dot-separated subjects (e.g., `tenant1.weather.temp`). The first token is always treated as the **Tenant ID** for state isolation.
+*   **Load Balancing:** The framework utilizes NATS **Queue Groups** (`knwstack_workers`) by default. This allows you to scale the engine horizontally by simply spinning up more Bytewax workers; NATS will automatically balance the incoming events across them.
+
 ## Getting Started
 
-*(Installation and usage instructions coming soon as the framework is actively implemented)*
+### 1. Installation
+KnwStack uses `uv` for lightning-fast dependency management.
 
 ```bash
 # Clone the repository
 git clone https://github.com/balamuru/knwstack.git
 cd knwstack
 
-# Install dependencies (using uv)
+# Install dependencies
 uv sync
+```
 
-# Start the local NATS broker
-nats-server -js
+### 2. Running the Engine
+Ensure NATS is running and the stream is configured before starting the engine.
 
+```bash
 # Run the KnwStack engine
 python -m knwstack.engine
 ```
