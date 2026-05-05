@@ -90,10 +90,32 @@ jetstream {
 ```
 
 ### 2. Configure JetStream Streams
-KnwStack requires a Stream to be defined for the subjects it consumes. Use the `nats` CLI to create a stream that covers your tenant subjects.
+KnwStack requires a Stream to be defined for the subjects it consumes. You can create this stream using the Web UI or the `nats` CLI.
+
+#### Option A: Using NUI (Web Interface)
+If using Docker Compose, this is the easiest method.
+1. Navigate to [http://localhost:3131](http://localhost:3131)
+2. Go to **JetStream** -> **Streams** -> **Add Stream**
+3. Name it `KNWSTACK_STREAM` and add the subject `app.>`
+
+#### Option B: Using Docker CLI
+If you are running the Docker Compose setup but prefer the terminal, you can execute the `nats` CLI directly inside the container:
 
 ```bash
-# Create a stream for all application telemetry
+docker exec -it knwstack-nats nats stream add KNWSTACK_STREAM \
+    --subjects "app.>" \
+    --storage file \
+    --retention limits \
+    --discard old \
+    --max-msgs -1 \
+    --max-bytes -1 \
+    --max-age 1h \
+    --dupe-window 2m
+```
+
+#### Option C: Using Local CLI
+If you installed the `nats` CLI binary locally, simply run:
+```bash
 nats stream add KNWSTACK_STREAM \
     --subjects "app.>" \
     --storage file \
