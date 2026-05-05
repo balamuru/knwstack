@@ -147,12 +147,26 @@ cd knwstack
 uv sync
 ```
 
-### 2. Running the Engine
-Ensure NATS is running and the stream is configured before starting the engine.
+### 2. Execution Environments
+KnwStack uses a virtual environment (located in `.venv/`) to isolate dependencies. There are two ways to run commands:
 
+*   **Option A: Using `uv run` (Recommended):**
+    Run any command prefixed with `uv run`. This automatically ensures the environment is in sync with `pyproject.toml` and executes the command within the virtual environment.
+    ```bash
+    uv run python -m knwstack.engine
+    ```
+*   **Option B: Manual Activation:**
+    If you prefer the traditional workflow, activate the environment once per terminal session:
+    ```bash
+    source .venv/bin/activate
+    python -m knwstack.engine
+    ```
+
+### 3. Running an Application
+To run a specific application (like the Smart Building example), navigate to the application directory and use the Bytewax runner:
 ```bash
-# Run the KnwStack engine
-python -m knwstack.engine
+cd examples/smart_building
+uv run python -m bytewax.run app:flow
 ```
 
 ## Directory Structure

@@ -48,10 +48,13 @@ class NatsSourcePartition(StatelessSourcePartition):
                 # Parse JSON payload
                 data = json.loads(msg.data.decode())
                 # Yield tuple of (routing_key, event_data)
-                logger.debug(f"NatsSource: Received event on '{msg.subject}'")
+                if not msg.subject.startswith("knwstack.internal."):
+                    logger.info(f"NatsSource: Received event on '{msg.subject}'")
                 batch.append((msg.subject, data))
         except TimeoutError:
-            pass # No new messages
+            # Yield a heartbeat event so Bytewax's SystemClock continues 
+            # to advance and close windows even when the stream is idle.
+            batch.append(("knwstack.internal.heartbeat", {}))
         except Exception as e:
             logger.error(f"Error fetching from NATS: {e}")
             

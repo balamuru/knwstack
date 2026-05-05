@@ -14,7 +14,12 @@ It highlights the **Split-Brain Architecture** by implementing:
    docker compose up -d
    ```
 
-2. The KnwStack environment must be active (or use `uv run` as shown below).
+2. **Python Environment**: KnwStack uses a virtual environment managed by `uv`. You have two options for running commands:
+   *   **Using `uv run` (Recommended)**: Prefix commands with `uv run` (e.g., `uv run python ...`). This handles the environment automatically and ensures your dependencies are in sync.
+   *   **Manual Activation**: Activate the environment manually if you prefer not to type the prefix:
+       ```bash
+       source .venv/bin/activate
+       ```
 
 ## Step 1: Create the NATS Stream
 

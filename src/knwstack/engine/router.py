@@ -23,47 +23,49 @@ def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "
     # Stream is a sequence of (subject, event_dict)
     stream = op.input("nats_in", flow, NatsSource(nats_url, input_subject))
 
-    # 2. MULTI-TENANT CEP WINDOWING
-    # To aggregate cross-stream events (e.g. weather.temp and weather.wind), 
-    # we need a grouping key. We use the first part of the subject (the tenant/app ID)
+    # 2. HOT PATH (REFLEX)
+    # Execute deterministic rules IMMEDIATELY without waiting for a window.
+    def execute_hot_path(msg):
+        subject, event_data = msg
+        if subject.startswith("knwstack.internal."):
+            return []
+            
+        logger.debug(f"Hot Path: Evaluating rules for subject '{subject}'")
+        actions = []
+        for rule in registry.reflex_rules:
+            if rule["topic"] == subject:
+                try:
+                    # Pass as a list of one event for API consistency
+                    action = rule["func"]([msg])
+                    if action:
+                        actions.append((f"{output_subject}.reflex", action))
+                except Exception as e:
+                    logger.error(f"Reflex Error: {e}")
+        return actions
+
+    hot_actions = op.flat_map("hot_path", stream, execute_hot_path)
+
+    # 3. WARM/COLD PATHS (WINDOWED)
+    # To aggregate cross-stream events, we key by tenant ID.
     def extract_tenant_key(msg):
         subject, event_data = msg
         tenant_id = subject.split(".")[0]
-        # Bytewax windowing requires (key, value)
         return tenant_id, msg
 
     keyed_stream = op.map("extract_tenant", stream, extract_tenant_key)
-    
-    # Apply a Tumbling Window to aggregate events within a timeframe
     clock, window = get_cep_window_config(window_size_seconds=1)
-    
-    # Collect all events for a tenant within the window into a list
     window_out = wop.collect_window("cep_join", keyed_stream, clock, window)
     windowed_stream = window_out.down
 
-    # 3. N-PATH ROUTER
-    def execute_paths(window_data):
+    def execute_warm_cold_paths(window_data):
         tenant_id, (window_metadata, events) = window_data
-        logger.info(f"Engine: Processing window for tenant '{tenant_id}' with {len(events)} events.")
-        actions_to_publish = []
+        if tenant_id != "knwstack":
+            logger.info(f"Engine: Processing window for tenant '{tenant_id}' with {len(events)} events.")
         
-        # Determine unique subjects present in this window to match rules
+        actions_to_publish = []
         triggered_subjects = set([e[0] for e in events])
         
-        # --- PATH 1: REFLEX (HOT) ---
-        # Execute sub-10ms deterministic rules
-        for rule in registry.reflex_rules:
-            if rule["topic"] in triggered_subjects:
-                try:
-                    # Pass the aggregated events to the rule
-                    action = rule["func"](events)
-                    if action:
-                        actions_to_publish.append((f"{output_subject}.reflex", action))
-                except Exception as e:
-                    logger.error(f"Reflex Error: {e}")
-
         # --- PATH 2: TACTICAL (WARM) ---
-        # Execute sub-100ms local ML models
         for model in registry.tactical_models:
             if model["topic"] in triggered_subjects:
                 try:
@@ -76,8 +78,6 @@ def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "
         # --- PATH 3: STRATEGIC (COLD) ---
         for prompt_cfg in registry.strategic_prompts:
             if prompt_cfg["topic"] in triggered_subjects:
-                # Run the strategic path in a background thread to avoid blocking the hot path
-                # and to provide a valid event loop for the async LLM call.
                 def _run_strategic():
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -89,11 +89,12 @@ def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "
 
         return actions_to_publish
 
-    # Route events and flatten the resulting actions
-    actions_stream = op.flat_map("router", windowed_stream, execute_paths)
+    warm_cold_actions = op.flat_map("warm_cold_paths", windowed_stream, execute_warm_cold_paths)
 
-    # 4. ACTION DISPATCH
-    op.output("nats_out", actions_stream, NatsSink(nats_url))
+    # 4. MERGE & DISPATCH
+    # Combine actions from all paths and publish back to NATS
+    all_actions = op.merge("merge_actions", hot_actions, warm_cold_actions)
+    op.output("nats_out", all_actions, NatsSink(nats_url))
 
     return flow
 
