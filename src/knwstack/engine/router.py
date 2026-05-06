@@ -91,10 +91,11 @@ def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "
 
     warm_cold_actions = op.flat_map("warm_cold_paths", windowed_stream, execute_warm_cold_paths)
 
-    # 4. MERGE & DISPATCH
-    # Combine actions from all paths and publish back to NATS
-    all_actions = op.merge("merge_actions", hot_actions, warm_cold_actions)
-    op.output("nats_out", all_actions, NatsSink(nats_url))
+    # 4. DISPATCH
+    # We output Hot Path and Warm Path independently so the fast Hot Path 
+    # is NEVER blocked by the windowing watermark of the Warm Path.
+    op.output("nats_out_hot", hot_actions, NatsSink(nats_url))
+    op.output("nats_out_warm", warm_cold_actions, NatsSink(nats_url))
 
     return flow
 
