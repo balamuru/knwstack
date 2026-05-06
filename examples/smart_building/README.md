@@ -55,27 +55,26 @@ uv run python -m bytewax.run app:flow
 
 In a new terminal window, use the provided `generator.py` script to simulate different real-world scenarios. 
 
-**Normal Telemetry (No Actions Triggered)**
+**Normal Telemetry (Nominal)**
 ```bash
-uv run python generator.py --mode telemetry_normal
+uv run python generator.py --mode normal
 ```
 
-**Hot Path (Fire Alarm)**
+**Hot Path (Immediate Reflex)**
 ```bash
-uv run python generator.py --mode fire
+uv run python generator.py --mode hot
 ```
 *Look at the engine terminal: You will see the Sub-10ms Reflex Rule trigger an immediate shutdown.*
 
-**Warm Path (Temperature Spike)**
+**Warm Path (Tactical Response)**
 ```bash
-uv run python generator.py --mode telemetry_hot
+uv run python generator.py --mode warm
 ```
 *Look at the engine terminal: The Tactical Model will calculate the 1-second rolling average and trigger a cooling increase.*
 
-**Cold Path (Complex Anomaly)**
+**Cold Path (Strategic Diagnosis)**
 ```bash
-# Ensure you have OPENAI_API_KEY exported in your environment!
-export OPENAI_API_KEY="your-key-here"
-uv run python generator.py --mode anomaly
+# Ensure you have OPENAI_API_KEY in your .env or environment!
+uv run python generator.py --mode cold
 ```
-*Look at the engine terminal: The Strategic Prompt will detect the mismatch between power draw and temperature, gather the context window, and asynchronously ask the LLM for a diagnosis without blocking the engine.*
+*Look at the engine terminal: The Strategic Prompt will detect the mismatch between power draw and temperature, gather the context window, and asynchronously ask the LLM for a diagnosis.*
