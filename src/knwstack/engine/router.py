@@ -79,10 +79,10 @@ def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "
         for prompt_cfg in registry.strategic_prompts:
             if prompt_cfg["topic"] in triggered_subjects:
                 def _run_strategic():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(_execute_strategic_async(prompt_cfg, events, output_subject, nats_url))
-                    loop.close()
+                    try:
+                        asyncio.run(_execute_strategic_async(prompt_cfg, events, output_subject, nats_url))
+                    except Exception as e:
+                        logger.error(f"Strategic Thread Error: {e}")
                 
                 import threading
                 threading.Thread(target=_run_strategic, daemon=True).start()
@@ -110,12 +110,14 @@ async def _execute_strategic_async(prompt_cfg, events, output_subject, nats_url)
         # Call the LLM using LiteLLM (automatically handles OpenAI, Anthropic, etc.)
         # The specific model is configured by the user in the prompt function
         # For default, we assume the user returns a valid LiteLLM messages payload
-        response = await completion(
+        from litellm import acompletion
+        response = await acompletion(
             model=messages.get("model", "gpt-3.5-turbo"),
             messages=messages["messages"]
         )
         
         llm_content = response.choices[0].message.content
+        logger.info(f"✅ Strategic Path: LLM Diagnosis received: {llm_content}")
         
         # Publish the result back to NATS
         import nats
