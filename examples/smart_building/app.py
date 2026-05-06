@@ -67,13 +67,17 @@ def anomaly_strategic(events):
         "messages": messages
     }
 
-# ==========================================
 # Engine Initialization
 # ==========================================
 # Create the Bytewax dataflow graph.
-# Notice we listen to `bldg1.>` which covers both `.telemetry` and `.alarm`
+# We use HYBRID ingestion:
+# - Alarms are 'superhot' (zero-latency push)
+# - Telemetry is 'reliable' (guaranteed JetStream pull for analytics)
 flow = build_engine(
     nats_url="nats://localhost:4222", 
-    input_subject="bldg1.>", 
+    inputs={
+        "bldg1.hvac.alarm": "superhot",
+        "bldg1.hvac.telemetry": "reliable"
+    },
     output_subject="bldg1.actions"
 )

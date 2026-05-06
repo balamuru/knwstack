@@ -21,24 +21,7 @@ It highlights the **Split-Brain Architecture** by implementing:
        source .venv/bin/activate
        ```
 
-## Step 1: Create the NATS Stream
-
-Before running the application, we need to define a JetStream for our `bldg1.>` subjects. We can use the `nats-box` Docker container to do this:
-
-```bash
-docker compose exec nats-box nats stream add BLDG1_STREAM \
-    --subjects "bldg1.>" \
-    --storage file \
-    --retention limits \
-    --discard old \
-    --max-msgs=-1 \
-    --max-bytes=-1 \
-    --max-age=1h \
-    --dupe-window=2m \
-    --defaults
-```
-
-## Step 2: Run the Application
+## Step 1: Run the Application
 
 The KnwStack framework operates over the Bytewax stream processing engine. You run your application by passing your Python file and the compiled `flow` object to the Bytewax runner.
 
@@ -49,32 +32,37 @@ cd examples/smart_building/
 uv run python -m bytewax.run app:flow
 ```
 
-*Note: The engine will start up and block, waiting for events on the `bldg1.>` subjects.*
+### 🚀 Hybrid Performance
+This example is configured in **Hybrid Mode** by default:
+- **Alarms** use the **SuperHot (Push)** path for absolute minimum latency.
+- **Telemetry** uses the **Reliable (Pull)** path to ensure zero data loss for AI analysis.
 
-## Step 3: Inject Telemetry (Test the System)
+The framework automatically provisions the necessary NATS JetStream infrastructure on startup.
+
+## Step 2: Inject Telemetry (Test the System)
 
 In a new terminal window, use the provided `generator.py` script to simulate different real-world scenarios. 
 
-**Normal Telemetry (Nominal)**
+**Nominal Telemetry (Reliable Path)**
 ```bash
-uv run python generator.py --mode normal
+uv run python generator.py --mode telemetry
 ```
 
 **Hot Path (Immediate Reflex)**
 ```bash
-uv run python generator.py --mode hot
+uv run python generator.py --mode fire_alarm
 ```
 *Look at the engine terminal: You will see the Sub-10ms Reflex Rule trigger an immediate shutdown.*
 
 **Warm Path (Tactical Response)**
 ```bash
-uv run python generator.py --mode warm
+uv run python generator.py --mode high_temp
 ```
 *Look at the engine terminal: The Tactical Model will calculate the 1-second rolling average and trigger a cooling increase.*
 
 **Cold Path (Strategic Diagnosis)**
 ```bash
 # Ensure you have OPENAI_API_KEY in your .env or environment!
-uv run python generator.py --mode cold
+uv run python generator.py --mode anomaly
 ```
 *Look at the engine terminal: The Strategic Prompt will detect the mismatch between power draw and temperature, gather the context window, and asynchronously ask the LLM for a diagnosis.*

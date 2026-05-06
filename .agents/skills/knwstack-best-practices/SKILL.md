@@ -22,19 +22,25 @@ KnwStack separates continuous data streams into latency-specific execution paths
 - **AI Orchestration (LiteLLM)**: Used instead of heavy frameworks like LangChain. Keeps the Cold Path lightweight and provider-agnostic, easily routing to 100+ LLMs.
 - **Dependency Management**: Uses `uv` (as defined in `pyproject.toml`).
 
-## 3. Framework Implementation "Gotchas" (Critical)
+## 3. Ingestion Modes (Reliable vs. SuperHot)
+KnwStack supports two distinct ingestion strategies depending on the use case:
+- **Reliable Mode (NATS JetStream)**: Uses Pull Subscriptions with persistence. Guaranteed delivery and "Time Travel" (replaying history). Best for Tactical/Strategic analysis.
+- **SuperHot Mode (NATS Core Push)**: Uses standard Pub/Sub with callbacks. Sub-millisecond latency with zero disk overhead. No persistence—if the consumer is down, data is lost. Best for the Reflex path.
+- **Hybrid (Multi-Input)**: The `build_engine` supports a mapping of `{subject: mode}`. This is the **Optimal Architecture**—use SuperHot for alarms and Reliable for telemetry in the same application.
+
+## 4. Framework Implementation "Gotchas" (Critical)
 - **Bytewax Watermarks & `op.merge`**: NEVER merge the Hot Path stream with the Windowed Warm/Cold Path streams. Bytewax synchronizes epochs on merged streams, meaning the instant Reflex actions will be delayed by the window boundary. Output them to independent `NatsSink` branches instead.
 - **NATS Python Asyncio (Background Thread)**: Because Bytewax is synchronous, the `nats-py` async client MUST run its event loop in a permanent, dedicated background thread. If the loop pauses between Bytewax batches, the connection will drop Server PINGs and become unresponsive.
 - **NATS Python Asyncio (Buffer Flushing)**: `nc.publish()` in python buffers messages asynchronously. If calling from a blocking context, you MUST explicitly call `await nc.flush()` immediately after publish to force the network transmission, otherwise messages remain stuck in Python memory.
 - **LiteLLM Asyncio**: Always use `asyncio.run(acompletion(...))` executed in a background `threading.Thread` for the Strategic path to prevent event loop closure errors and avoid blocking the Bytewax worker.
 
-## 4. Developer API Abstractions
+## 5. Developer API Abstractions
 Developers write high-performance logic using simple decorators that register logic globally for the Bytewax engine:
 - `@reflex_rule("topic.name")`
 - `@tactical_model("topic.name")`
 - `@strategic_prompt("topic.name", cooldown_s=60)`
 
-## 5. Project Structure Conventions
+## 6. Project Structure Conventions
 Maintain logic isolation following the established directory structure:
 - `docs/`: Architecture and implementation walkthroughs
 - `scripts/`: CLI utilities (Scaffolding, Test Event Injection)

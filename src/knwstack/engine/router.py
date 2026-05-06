@@ -5,23 +5,50 @@ from litellm import completion
 import asyncio
 import json
 
-from knwstack.connectors.nats import NatsSource, NatsSink
+from knwstack.connectors.nats import NatsSource, NatsCoreSource, NatsSink
 from knwstack.api.decorators import registry
 from knwstack.state.windowing import get_cep_window_config
 import logging
 
 logger = logging.getLogger(__name__)
 
-def build_engine(nats_url: str = "nats://localhost:4222", input_subject: str = "app.>", output_subject: str = "actions.>"):
+from typing import Dict, Union
+
+def build_engine(
+    nats_url: str = "nats://localhost:4222", 
+    inputs: Union[str, Dict[str, str]] = "app.>", 
+    output_subject: str = "actions.>"
+):
     """
     Constructs the core KnwStack Dataflow.
-    Reads from NATS, performs multi-tenant routing, and executes the N-Paths.
+    Supports a single subject string or a dict mapping {subject: mode}.
     """
     flow = Dataflow("knwstack_engine")
     
     # 1. INGESTION
-    # Stream is a sequence of (subject, event_dict)
-    stream = op.input("nats_in", flow, NatsSource(nats_url, input_subject))
+    # Normalize inputs to a dict: {subject: mode}
+    if isinstance(inputs, str):
+        input_map = {inputs: "reliable"}
+    else:
+        input_map = inputs
+
+    input_streams = []
+    for subject, mode in input_map.items():
+        if mode == "superhot":
+            logger.info(f"🚀 Ingesting '{subject}' in SUPERHOT mode (NATS Core Push)")
+            source = NatsCoreSource(nats_url, subject)
+        else:
+            logger.info(f"🛡️ Ingesting '{subject}' in RELIABLE mode (NATS JetStream Pull)")
+            source = NatsSource(nats_url, subject)
+        
+        safe_id = subject.replace(".", "_").replace(">", "all")
+        input_streams.append(op.input(f"nats_in_{safe_id}", flow, source))
+
+    # Merge all input streams into a single processing stream
+    if len(input_streams) > 1:
+        stream = op.merge("merge_inputs", *input_streams)
+    else:
+        stream = input_streams[0]
 
     # 2. HOT PATH (REFLEX)
     # Execute deterministic rules IMMEDIATELY without waiting for a window.

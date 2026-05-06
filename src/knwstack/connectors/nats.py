@@ -54,6 +54,14 @@ class NatsSourcePartition(StatelessSourcePartition):
         nc = await nats.connect(self.nats_url)
         js = nc.jetstream()
         
+        # Auto-provision stream if missing (required for JetStream Pull)
+        try:
+            await js.add_stream(name="knwstack_stream", subjects=[self.subject])
+        except Exception:
+            # If it already exists or overlaps, NATS will handle it.
+            # We just need to ensure SOME stream covers this subject.
+            pass
+
         logger.info(f"NatsSource: Subscribing to '{self.subject}' with durable '{self.queue_group}'")
         sub = await js.pull_subscribe(self.subject, durable=self.queue_group)
         
@@ -106,7 +114,8 @@ class NatsSourcePartition(StatelessSourcePartition):
 
 class NatsSource(DynamicSource):
     """
-    Bytewax Input Connector for NATS JetStream.
+    Bytewax Input Connector for NATS JetStream (Pull).
+    Recommended for reliable production workloads.
     """
     def __init__(self, nats_url: str, subject: str, queue_group: str = "knwstack_workers"):
         self.nats_url = nats_url
@@ -115,6 +124,86 @@ class NatsSource(DynamicSource):
 
     def build(self, step_id, worker_index, worker_count):
         return NatsSourcePartition(self.nats_url, self.subject, self.queue_group)
+
+class NatsCoreSourcePartition(StatelessSourcePartition):
+    """
+    A single partition reading from NATS Core (Push).
+    Accepts messages as fast as they arrive without JetStream persistence overhead.
+    """
+    def __init__(self, nats_url: str, subject: str, queue_group: str):
+        self.nats_url = nats_url
+        self.subject = subject
+        self.queue_group = queue_group
+        
+        self.msg_queue = queue.Queue()
+        self.should_exit = threading.Event()
+        
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+        
+        start_time = time.time()
+        while self.thread.is_alive() and not hasattr(self, 'connected'):
+            if time.time() - start_time > 10:
+                raise RuntimeError("Failed to connect to NATS Core within 10 seconds")
+            time.sleep(0.1)
+
+    def _run_loop(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._worker())
+        except Exception as e:
+            logger.error(f"NATS Core Thread Error: {e}")
+        finally:
+            loop.close()
+
+    async def _worker(self):
+        nc = await nats.connect(self.nats_url)
+        
+        async def on_msg(msg):
+            data = json.loads(msg.data.decode())
+            self.msg_queue.put((msg.subject, data))
+
+        logger.info(f"NatsCoreSource: Subscribing to '{self.subject}' (Push)")
+        await nc.subscribe(self.subject, queue=self.queue_group, cb=on_msg)
+        
+        self.connected = True
+        while not self.should_exit.is_set():
+            await asyncio.sleep(0.5)
+        
+        await nc.close()
+
+    def next_batch(self):
+        batch = []
+        try:
+            while len(batch) < 100:
+                item = self.msg_queue.get_nowait()
+                if not item[0].startswith("knwstack.internal."):
+                    logger.info(f"NatsCoreSource: Received event on '{item[0]}'")
+                batch.append(item)
+        except queue.Empty:
+            pass
+        if not batch:
+            batch.append(("knwstack.internal.heartbeat", {}))
+        return batch
+
+    def close(self):
+        self.should_exit.set()
+        if self.thread.is_alive():
+            self.thread.join(timeout=2.0)
+
+class NatsCoreSource(DynamicSource):
+    """
+    Bytewax Input Connector for NATS Core (Push).
+    Recommended for "SuperHot" paths where latency is prioritized over reliability.
+    """
+    def __init__(self, nats_url: str, subject: str, queue_group: str = "knwstack_workers"):
+        self.nats_url = nats_url
+        self.subject = subject
+        self.queue_group = queue_group
+
+    def build(self, step_id, worker_index, worker_count):
+        return NatsCoreSourcePartition(self.nats_url, self.subject, self.queue_group)
 
 class NatsSinkPartition(StatelessSinkPartition):
     """Writes actions/events back to NATS."""
