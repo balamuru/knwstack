@@ -2,6 +2,7 @@
 
 
 # KnwStack
+*(Pronounced: **"Know-Stack"** — Where Knowledge meets Now)*
 
 **The Real-Time AI Framework for "Split-Brain" Streaming.**
 
