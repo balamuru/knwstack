@@ -1,6 +1,5 @@
-<p align="center">
-  <img src="assets/images/logo.png" width="300" alt="KnwStack Logo">
-</p>
+![KnwStack Logo](assets/images/logo.png)
+
 
 # KnwStack
 
