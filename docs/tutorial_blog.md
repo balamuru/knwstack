@@ -92,6 +92,7 @@ def diagnose_issue(events):
     }
 ```
 
+
 ---
 
 ## Module 6: Initializing the Engine
