@@ -146,7 +146,35 @@ The framework includes a `conftest.py` fixture that automatically clears the glo
 
 ---
 
-## 6. Smart Building Reference Implementation
+---
+
+## 6. Advanced Patterns: Windowing & CEP
+
+KnwStack leverages Pathway's incremental engine to perform **Complex Event Processing (CEP)** with minimal code.
+
+### 6.1 Sliding Windows
+Windowing allows you to reason about trends rather than single points. In the `Tactical` path, we typically use sliding windows:
+```python
+# Conceptual example of windowed logic
+def tactical_rule(stream):
+    # Calculate 10-second rolling average
+    avg_temp = stream.windowby(
+        pw.temporal.sliding(duration=10, step=1)
+    ).reduce(pw.reducers.avg(stream.temp))
+    
+    # Trigger only if trend persists
+    return avg_temp > 85
+```
+
+### 6.2 Stream Joins (CEP)
+You can correlate multiple NATS subjects to detect complex patterns:
+*   **Subject A**: Motion Sensor
+*   **Subject B**: Door Lock
+*   **CEP Rule**: "If Motion is detected and the Door is Unlocked within 5 seconds, trigger High-Intellect reasoning."
+
+---
+
+## 7. Smart Building Reference Implementation
 
 To see these concepts in action, explore `examples/smart_building/`:
 1.  **Start Engine**: `python app.py --log INFO`

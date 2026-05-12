@@ -34,13 +34,13 @@ Traditional streaming (Kafka/Flink) is built for throughput, not intelligence. T
 
 ### ⚖️ Comparison
 
-| Feature | KnwStack | Kafka / Confluent |
-| :--- | :--- | :--- |
-| **Primary Goal** | **Intelligence Routing** | **Data Ingestion** |
-| **Philosophy** | Split-Brain (Hot/Warm/Cold) | Unified Durable Log |
-| **Infrastructure** | Single Binary (NATS) | Complex (JVM/Zookeeper) |
-| **Latency Focus** | Sub-10ms End-to-End | 50ms - 500ms Typical |
-| **DevEx** | Pure Python Decorators | Java/Scala Heavy |
+| Feature | KnwStack | Confluent (Kafka) | Redpanda | LangChain |
+| :--- | :--- | :--- | :--- | :--- |
+| **Primary Goal** | **AI Routing** | Data Persistence | Fast Ingestion | Agent Logic |
+| **Split-Brain** | **Native (Hot/Cold)** | ❌ (Manual Setup) | ❌ (Manual Setup) | ❌ (Synchronous) |
+| **Latency Focus** | **Sub-10ms** | 100ms+ | 10ms - 50ms | Seconds (API) |
+| **Infrastructure** | Single Binary (NATS) | Complex (JVM/Zoo) | Single Binary | Library |
+| **Programming** | Python Decorators | Java/Scala Heavy | Kafka API | Chains/Graphs |
 
 ---
 
