@@ -14,6 +14,13 @@ KnwStack implements a **"Split-Brain"** paradigm, separating data processing int
 2.  **The Tactical Path (Warm)**: Sub-100ms latency for fast local machine learning inference or windowed heuristics.
 3.  **The Strategic Path (Cold)**: Seconds of latency for deep Cloud LLM reasoning via asynchronous background tasks.
 
+### Mapping Events to Paths
+In a real-world scenario, you typically have 4 levels of interaction:
+1.  **Ingestion (Green)**: The baseline "hum" of telemetry (e.g., normal temp readings).
+2.  **Reflex (Red)**: The "Hot" response to a binary trigger (e.g., Fire Alarm).
+3.  **Tactical (Orange)**: The "Warm" response to a windowed trend (e.g., High Temp over 5s).
+4.  **Strategic (Blue)**: The "Cold" response to an unknown anomaly requiring LLM reasoning.
+
 ### Parallel Execution (Fan-Out)
 Unlike traditional "chains," KnwStack broadcasts a single event to all three paths simultaneously. This allows the system to **survive first** (Reflex) and **reason second** (Strategic) without any blocking.
 
@@ -37,7 +44,36 @@ KnwStack is built on a high-performance **Python + Rust Edge Stack**. We chose t
 
 ---
 
-## 3. Developer API Reference
+## 3. KnwStack vs. The World (Alternatives)
+
+KnwStack is not a replacement for general-purpose message brokers; it is a **Specialized AI Router**.
+
+| Feature | KnwStack | Apache Kafka / Confluent |
+| :--- | :--- | :--- |
+| **Primary Goal** | Latency-Aware AI Routing | Durable Data Ingestion & Persistence |
+| **Philosophy** | Split-Brain (Hot/Warm/Cold) | Unified Log Append |
+| **Dev Experience** | Pure Python Decorators | Java/Scala Heavy |
+| **Infrastructure** | Single Binary (NATS) | Complex (Zookeeper/KRaft/JVM) |
+| **Best For** | Real-time AI Reflexes | Multi-Petabyte Pipelines |
+| **Latency Focus** | Sub-10ms End-to-End | 50ms - 500ms Typical |
+
+---
+
+## 4. Positioning: When to use KnwStack
+
+### 4.1 Ideal Use Cases (The "Who/What/Where")
+*   **Edge Intelligence**: Where you need to react to a physical event (e.g., a sensor over-temp) in <10ms while simultaneously asking an LLM for a post-mortem analysis.
+*   **High-Velocity Monitoring**: Smart Buildings, Industrial IoT, and High-Frequency Trading signals where "surviving the burst" is critical.
+*   **Autonomous Synthesis**: Systems that need to correlate fast heuristic metrics with slow, high-reasoning AI plans.
+
+### 4.2 What KnwStack is NOT meant for
+*   **Data Lake Storage**: KnwStack is about **flow, not storage**. If you need to store petabytes of historical logs for 7 years, use Kafka or S3.
+*   **Batch Processing**: If your task is "calculate the average temperature over the last 3 years for 1 million sensors," use Spark, Snowflake, or Polars.
+*   **Simple Web APIs**: For a standard "User Profile" CRUD app, KnwStack is overkill. Use FastAPI or Django.
+
+---
+
+## 5. Developer API Reference
 
 Building a KnwStack application is handled entirely through simple Python decorators. The framework manages the complex threading, windowing, and NATS connectivity for you.
 

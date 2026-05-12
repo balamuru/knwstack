@@ -9,6 +9,25 @@ KnwStack allows you to process high-velocity data streams while simultaneously r
 
 ---
 
+## ⚡ Why KnwStack?
+
+Traditional streaming (Kafka/Flink) is built for throughput, not intelligence. Traditional AI agents (LangChain) are built for reasoning, not speed. **KnwStack is the bridge.**
+
+*   **Sub-10ms Reflexes**: Deterministic rules that fire instantly when an anomaly is detected.
+*   **Asynchronous Intellect**: Deep LLM analysis that runs in parallel without blocking the critical path.
+*   **Pure Python**: Build complex real-time AI pipelines using simple decorators.
+*   **Lightweight**: Powered by NATS and Pathway—no JVM, no Zookeeper, no bloat.
+
+---
+
+## 🎯 Use Cases
+
+*   **Industrial IoT**: Shut down a machine in 5ms while an LLM diagnoses the vibration patterns.
+*   **Smart Infrastructure**: React to floor alarms instantly while reasoning about building-wide security protocols.
+*   **FinTech**: Execute local risk-checks on market ticks while a Strategic path plans long-term hedging.
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Infrastructure

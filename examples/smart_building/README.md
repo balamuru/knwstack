@@ -35,6 +35,14 @@ python generator.py
 
 This will open a color-coded menu where you can trigger each path (Nominal, Hot, Warm, Cold) as many times as you like without restarting.
 
+### Execution Path Mapping
+The sample generator provides 4 scenarios that demonstrate how events flow through the Split-Brain:
+
+1.  **🟢 Nominal Telemetry**: **Baseline Ingestion**. Fills the state windows but does not trigger an action.
+2.  **🔴 Fire Alarm**: **Hot Path (Reflex)**. Triggers a sub-10ms hard shutdown.
+3.  **🟠 High Temp**: **Warm Path (Tactical)**. Triggers a sub-100ms warning based on a 5-second window.
+4.  **🔵 Anomaly**: **Cold Path (Strategic)**. Dispatches an async request to an LLM for diagnosis.
+
 ### Scenario Definitions
 If you prefer single-shot commands, you can still use the `--mode` flag:
 
