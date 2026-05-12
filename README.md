@@ -169,7 +169,24 @@ cd examples/smart_building
 python generator.py
 ```
 
-## Directory Structure
+## Testing
+
+KnwStack comes with a comprehensive test suite covering the API, routing logic, and integration components.
+
+### 1. Run All Tests
+Ensure your environment is activated, then run:
+```bash
+uv run pytest
+```
+
+### 2. Targeted Testing
+You can also run specific test modules:
+*   **API/Decorators**: `uv run pytest tests/test_api.py`
+*   **Logic (Split-Brain)**: `uv run pytest tests/test_logic.py`
+*   **Integration (Engine)**: `uv run pytest tests/test_integration.py`
+
+### 3. Continuous Integration
+Tests are automatically executed via GitHub Actions on every push to the `main` branch.
 
 ```text
 knwstack/

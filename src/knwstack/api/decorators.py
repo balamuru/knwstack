@@ -9,6 +9,11 @@ class RuleRegistry:
         self.tactical_models = []
         self.strategic_prompts = []
 
+    def clear(self):
+        self.reflex_rules = []
+        self.tactical_models = []
+        self.strategic_prompts = []
+
     def register_reflex(self, func: Callable, trigger_topic: str):
         self.reflex_rules.append({"func": func, "topic": trigger_topic})
 
