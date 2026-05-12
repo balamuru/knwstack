@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/images/logo.png" width="300" alt="KnwStack Logo">
+</p>
+
 # KnwStack
 
 **The Real-Time AI Framework for "Split-Brain" Streaming.**
