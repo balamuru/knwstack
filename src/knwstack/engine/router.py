@@ -56,7 +56,7 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
                 logger.error(f"Failed to parse data for subject {subject}: {data}")
                 pass
 
-        logger.info(f"⚡ [INGEST] {subject} -> {data}")
+        logger.debug(f"⚡ [INGEST] {subject} -> {data}")
         
         rule_found = False
         for rule in registry.reflex_rules:
@@ -69,7 +69,7 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
                     return {"subject": f"{output_subject}.reflex", "data": action}
         
         if rule_found:
-            logger.info("   ∟ [HOT] Outcome: No action taken (logic conditions not met)")
+            logger.debug("   ∟ [HOT] Outcome: No action taken (logic conditions not met)")
         else:
             logger.debug(f"   ∟ [HOT] Outcome: No matching reflex rules for {subject}")
             
@@ -123,7 +123,7 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
                 logger.warning(f"   ∟ [WARM] Outcome: ACTION TRIGGERED -> {action}")
                 return {"subject": f"{output_subject}.tactical", "data": action}
             
-            logger.info("   ∟ [WARM] Outcome: No action taken")
+            logger.debug("   ∟ [WARM] Outcome: No action taken")
             return {}
 
         warm_result = model_table.windowby(model_table.time, window=window).reduce(
@@ -169,7 +169,7 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
             logger.info(f"🔵 [COLD] Evaluating Strategic Prompt '{prompt_cfg['func'].__name__}' for {topic} (Window: {len(py_events)} events)")
             messages = prompt_cfg["func"](py_events)
             if not messages: 
-                logger.info("   ∟ [COLD] Outcome: No anomalies detected")
+                logger.debug("   ∟ [COLD] Outcome: No anomalies detected")
                 return {}
             
             from litellm import acompletion
