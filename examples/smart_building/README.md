@@ -11,13 +11,12 @@ uv sync
 source .venv/bin/activate
 ```
 
-## 2. Run the Application
-
-Once activated, you can run the application directly with plain Python:
-
+## 2. Start the Engine
+In your primary terminal, run:
 ```bash
-python app.py
+python app.py --log INFO
 ```
+*Note: Use `--log DEBUG` if you want to see every single event ingestion, or `--log WARNING` for a production-clean output.*
 
 ### 🚀 Hybrid Performance
 This example is configured in **Hybrid Mode** by default:

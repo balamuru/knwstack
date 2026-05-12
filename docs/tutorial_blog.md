@@ -23,7 +23,36 @@ To solve this, KnwStack separates data streams into three distinct execution pat
 
 ---
 
-## Module 2: Codebase Tour & Project Structure
+## Module 2: Parallel Brains (One Event, Multiple Reactions)
+
+In a traditional "Step-Function" or "Chain" architecture, you have to choose: do I act now, or do I think first? 
+
+KnwStack allows for **Parallel Fan-Out**. A single event entering the engine is instantly broadcast to all three paths. This means you don't have to sacrifice intelligence for speed. 
+
+Consider a **Fire Alarm** event:
+1. **The Reflex (Hot)**: Instantly cuts power to the HVAC to prevent smoke spread (<10ms).
+2. **The Strategic (Cold)**: Simultaneously dispatches the alarm data to an LLM to generate a safety report for emergency responders (Seconds).
+
+The system "survives" first via the Reflex path, and "learns" or "plans" second via the Strategic path—all triggered by the same initial event.
+
+---
+
+## Module 3: Why this Stack? (Design Decisions)
+
+You might wonder why we didn't use the "industry standard" big data stack (Kafka + Flink + LangChain). Here is the rationale:
+
+### 1. NATS JetStream vs. Apache Kafka
+Kafka is powerful, but it’s heavy. It requires Zookeeper/KRaft and significant JVM memory. **NATS** is a single, lightweight binary that provides the same at-least-once delivery and replayability we need, but with sub-millisecond subject-based routing. For Edge AI and responsive streams, NATS is simply faster and easier to operate.
+
+### 2. Pathway vs. Apache Flink
+We wanted a **Pure Python API** for AI engineers, but we needed **Rust-level performance** for the Hot Path (<10ms). Apache Flink is Java-heavy and making it play nice with Python (PyFlink) often introduces significant latency. **Pathway** gives us a Rust-backed core with an incremental computation model, allowing us to write logic in Python while maintaining the speed of a compiled language.
+
+### 3. LiteLLM vs. Heavy Frameworks
+In a streaming engine, overhead is the enemy. While frameworks like LangChain are great for building agents, they can be "heavy" for a high-throughput router. **LiteLLM** provides a lean, OpenAI-compatible interface to 100+ LLM providers without adding unnecessary complexity to our async background tasks.
+
+---
+
+## Module 4: Codebase Tour & Project Structure
 
 Understanding the KnwStack repository is critical for mastering the framework. Let's look at `src/knwstack/`:
 
@@ -32,7 +61,7 @@ Understanding the KnwStack repository is critical for mastering the framework. L
 
 ---
 
-## Module 3: The Developer API
+## Module 5: The Developer API
 
 Building an app is incredibly simple. You don't manage threads or window boundaries; you just use decorators. KnwStack automatically tags events with their NATS subjects, so your rules always know where data came from.
 
@@ -65,7 +94,7 @@ def diagnose_issue(events):
 
 ---
 
-## Module 4: Initializing the Engine
+## Module 6: Initializing the Engine
 
 KnwStack uses the `build_engine` factory to wire everything together. It handles the NATS connectivity and Pathway graph construction for you.
 
@@ -85,7 +114,7 @@ if __name__ == "__main__":
 
 ---
 
-## Module 5: Critical Framework Concepts
+## Module 7: Critical Framework Concepts
 
 ### Determinism & State
 Pathway is an incremental engine. This means your rules and models should be deterministic. For time-based operations, KnwStack expects a `timestamp` field in your JSON payloads. This ensures that even if events are delayed, the windowing results remain consistent.
@@ -95,7 +124,7 @@ While Pathway handles the dataflow, KnwStack uses `litellm` in the Strategic pat
 
 ---
 
-## Module 6: Hands-On with the Smart Building Example
+## Module 8: Hands-On with the Smart Building Example
 
 To see everything come together, let's examine the `examples/smart_building/app.py` application. 
 
@@ -119,20 +148,68 @@ def temperature_tactical(events):
 ```
 
 ### 3. The Cold Path: Strategic LLM Diagnosis
-Finally, we check for complex mechanical anomalies. If detected, we send it to an LLM:
+Finally, we check for complex mechanical anomalies or perform post-mortem analysis on emergencies. For example, we can trigger an AI safety report whenever a fire alarm occurs:
 ```python
-@strategic_prompt("bldg1.hvac.telemetry", cooldown_s=60)
-def anomaly_strategic(events):
-    # Logic to detect anomaly...
+@strategic_prompt("bldg1.hvac.alarm", cooldown_s=5)
+def fire_analysis_strategic(events):
+    # Logic to generate a safety assessment for the maintenance crew
     return {
         "model": "gpt-4o-mini",
-        "messages": [{"role": "user", "content": "The HVAC system is drawing over 10kW..."}]
+        "messages": [...]
     }
 ```
 
-## Next Steps
+---
 
-Ready to run it yourself? 
-Spin up the NATS infrastructure using `docker compose up -d`, and use the `scripts/injector.py` utility to send test events. Watch how the Hot path fires instantly while the Strategic path handles the deep thinking!
+## Module 9: Observing the Engine's "Narrative"
+
+One of the most powerful features of KnwStack is its transparent logging. Because the engine is complex, we’ve implemented a descriptive narrative that lets you follow an event through the "Split-Brain."
+
+When you run the engine, you'll see logs like this:
+* `⚡ [INGEST]`: A raw event enters the system.
+* `   ∟ [HOT]`: The Reflex path checking for immediate deterministic rules.
+* `🟠 [WARM]`: The Tactical path evaluating windowed metrics.
+* `🔵 [COLD]`: The Strategic path dispatching asynchronous AI prompts.
+
+This observability makes it trivial to debug why a specific AI prompt was (or wasn't) triggered based on the incoming stream.
+
+### Tuning Verbosity for Performance
+In a production environment with thousands of events, you don't want to log every single ingestion. KnwStack uses standard Python `logging` levels to help you tune performance:
+
+* **DEBUG**: Shows everything, including `⚡ [INGEST]` for every event and `∟ No action taken` for every path. Best for development.
+* **INFO (Default)**: Shows rule matching and the start of path evaluations. Best for staging/monitoring.
+* **WARNING**: Only shows actual actions being triggered and LLM dispatches. Best for high-throughput production.
+
+You can control this via the `--log` flag when starting your application:
+
+```bash
+python app.py --log DEBUG
+```
+
+By default, the system runs at **INFO** level, providing a balanced narrative without overwhelming your terminal.
+
+---
+
+## Next Steps: Run it Yourself
+
+Ready to see the Split-Brain in action? We’ve made the setup opinionated and simple:
+
+1. **Spin up NATS**: `docker compose up -d`
+2. **Setup Environment**:
+   ```bash
+   uv sync
+   source .venv/bin/activate
+   ```
+3. **Run the Example**:
+   ```bash
+   cd examples/smart_building
+   python app.py
+   ```
+4. **Trigger Events**: In a separate terminal, use the **Interactive Generator**:
+   ```bash
+   python generator.py
+   ```
+
+Select an option in the generator menu (like **Option 2: Fire Alarm**) and watch the engine logs instantly snap into action!
 
 Happy streaming!

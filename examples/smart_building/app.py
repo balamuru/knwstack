@@ -1,8 +1,14 @@
 import logging
+import argparse
 from knwstack.api.decorators import reflex_rule, tactical_model, strategic_prompt
 from knwstack.engine.router import build_engine
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+def setup_logging(level_name):
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
+    # Also set level for the core knwstack logger if it differs
+    logging.getLogger("knwstack").setLevel(level)
+
 logger = logging.getLogger(__name__)
 
 # ==========================================
@@ -89,6 +95,12 @@ engine = build_engine(
 )
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="KnwStack Smart Building Example")
+    parser.add_argument("--log", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO", help="Set the logging level (default: INFO)")
+    args = parser.parse_args()
+    
+    setup_logging(args.log)
+    
     try:
         engine.run()
     except KeyboardInterrupt:
