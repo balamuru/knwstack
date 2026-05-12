@@ -147,26 +147,20 @@ cd knwstack
 uv sync
 ```
 
-### 2. Execution Environments
-KnwStack uses a virtual environment (located in `.venv/`) to isolate dependencies. There are two ways to run commands:
+### 2. Execution Environment
+Activate the virtual environment to ensure all dependencies are available:
 
-*   **Option A: Using `uv run` (Recommended):**
-    Run any command prefixed with `uv run`. This automatically ensures the environment is in sync with `pyproject.toml` and executes the command within the virtual environment.
-    ```bash
-    uv run python -m knwstack.engine
-    ```
-*   **Option B: Manual Activation:**
-    If you prefer the traditional workflow, activate the environment once per terminal session:
-    ```bash
-    source .venv/bin/activate
-    python -m knwstack.engine
-    ```
+```bash
+source .venv/bin/activate
+```
+
+Once activated, you can run all commands directly using `python`.
 
 ### 3. Running an Application
 To run a specific application (like the Smart Building example), simply run the Python script:
 ```bash
 cd examples/smart_building
-uv run python app.py
+python app.py
 ```
 
 ## Directory Structure
