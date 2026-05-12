@@ -164,3 +164,23 @@ Once Trusted Publishing is configured, you never have to publish manually again.
 4.  **Release**: Go to your GitHub Repository -> **Create a new release** for that tag.
 
 The [publish.yml](file:///home/vinayb/AntiGravityProjects/knwstack/.github/workflows/publish.yml) workflow will automatically build and upload the library to PyPI. Your users can then simply run `pip install knwstack`.
+
+---
+
+## 9. Architecture at Scale (Multi-Pod Deployment)
+
+KnwStack is designed to scale horizontally across multiple pods or containers using NATS JetStream and partitioned dataflows.
+
+### 9.1 Competing Consumers
+When deploying multiple instances of a KnwStack app, they join a shared **Durable Consumer Group** in NATS.
+*   **Load Balancing**: NATS automatically distributes incoming events across the available pods.
+*   **Reliability**: If one pod fails, NATS redistributes its unacknowledged messages to healthy pods.
+
+### 9.2 State Correlation & Partitioning
+For **Tactical (Warm)** and **Strategic (Cold)** paths that rely on windowed state, KnwStack uses **Key-Based Partitioning**:
+*   **The Key**: Events are partitioned by a specific field (e.g., `building_id` or `device_id`).
+*   **State Integrity**: NATS ensures that all events with the same key are routed to the same pod. This allows the local Pathway engine to maintain a consistent sliding window for that specific entity without needing a global distributed database.
+
+### 9.3 Scaling Strategy
+*   **Stateless Scaling**: The **Hot Path** (Reflexes) scales linearly with the number of pods.
+*   **Stateful Scaling**: The **Warm/Cold Paths** scale by increasing the number of partitions in the NATS Stream, allowing more pods to share the stateful workload.
