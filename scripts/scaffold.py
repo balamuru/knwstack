@@ -14,7 +14,9 @@ import os
 
 TEMPLATE = """import logging
 from knwstack.api.decorators import reflex_rule, tactical_model, strategic_prompt
+from knwstack.engine.router import build_engine
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 # ==========================================
@@ -26,6 +28,21 @@ logger = logging.getLogger(__name__)
 {tacticals}
 
 {strategics}
+
+# ==========================================
+# Engine Initialization
+# ==========================================
+engine = build_engine(
+    nats_url="nats://localhost:4222", 
+    inputs={subjects},
+    output_subject="{tenant_name_lower}.actions"
+)
+
+if __name__ == "__main__":
+    try:
+        engine.run()
+    except KeyboardInterrupt:
+        logger.info("Shutting down KnwStack Engine...")
 """
 
 REFLEX_TEMPLATE = """@reflex_rule("{tenant_name}.{stream}")
@@ -85,11 +102,15 @@ def generate_scaffold(tenant_name: str, streams: list, output_dir: str):
         tacticals.append(TACTICAL_TEMPLATE.format(**ctx))
         strategics.append(STRATEGIC_TEMPLATE.format(**ctx))
         
+    full_subjects = [f"{tenant_name}.{s}" for s in streams]
+    
     content = TEMPLATE.format(
         tenant_name=tenant_name.upper(),
-        reflexes="\\n".join(reflexes),
-        tacticals="\\n".join(tacticals),
-        strategics="\\n".join(strategics)
+        tenant_name_lower=tenant_name.lower(),
+        subjects=full_subjects,
+        reflexes="\n".join(reflexes),
+        tacticals="\n".join(tacticals),
+        strategics="\n".join(strategics)
     )
     
     with open(file_path, "w") as f:

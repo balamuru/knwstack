@@ -16,6 +16,11 @@ import nats
 async def inject_event(nats_url: str, subject: str, payload_dict: dict):
     try:
         nc = await nats.connect(nats_url)
+        # Add timestamp if missing for Pathway windowing
+        import time
+        if "timestamp" not in payload_dict:
+            payload_dict["timestamp"] = int(time.time() * 1000)
+            
         payload_bytes = json.dumps(payload_dict).encode()
         await nc.publish(subject, payload_bytes)
         print(f"🚀 Successfully injected event to '{subject}':")

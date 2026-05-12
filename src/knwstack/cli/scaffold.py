@@ -56,17 +56,19 @@ def analysis_strategic(events):
     }}
 
 # Initialize the engine
-flow = build_engine(
+engine = build_engine(
     nats_url="nats://localhost:4222",
-    input_subject="{args.name}.>",
+    inputs="{args.name}.>",
     output_subject="{args.name}.actions"
 )
+
+if __name__ == "__main__":
+    engine.run()
 """
     
     with open(project_dir / "app.py", "w") as f:
         f.write(app_py_content)
         
-    # Create a basic README
     readme_content = f"""# {args.name}
     
 A KnwStack Real-Time AI Application.
@@ -76,7 +78,7 @@ A KnwStack Real-Time AI Application.
 1. Ensure NATS is running.
 2. Run the application:
    ```bash
-   uv run python -m bytewax.run app:flow
+   uv run python app.py
    ```
 """
     with open(project_dir / "README.md", "w") as f:
@@ -85,7 +87,7 @@ A KnwStack Real-Time AI Application.
     print(f"Successfully created '{args.name}' at {project_dir}")
     print("\nNext steps:")
     print(f"  cd {args.name}")
-    print("  uv run python -m bytewax.run app:flow")
+    print("  uv run python app.py")
 
 if __name__ == "__main__":
     main()

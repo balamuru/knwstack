@@ -23,13 +23,10 @@ It highlights the **Split-Brain Architecture** by implementing:
 
 ## Step 1: Run the Application
 
-The KnwStack framework operates over the Bytewax stream processing engine. You run your application by passing your Python file and the compiled `flow` object to the Bytewax runner.
-
-Run this from the `examples/smart_building` directory:
+The KnwStack framework operates over the Pathway stream processing engine. You run your application by simply executing the Python script:
 
 ```bash
-cd examples/smart_building/
-uv run python -m bytewax.run app:flow
+uv run python app.py
 ```
 
 ### 🚀 Hybrid Performance
