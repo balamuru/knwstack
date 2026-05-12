@@ -105,25 +105,62 @@ Run your app with `--log DEBUG` to see the full dataflow state, or `INFO` for th
 
 ## 7. Advanced Patterns: Windowing & CEP
 
+KnwStack leverages Pathway's incremental engine to perform **Complex Event Processing (CEP)** with minimal code.
+
 ### 7.1 Complex Event Processing (CEP)
 CEP is the core of the Tactical path. It allows you to correlate multiple events into a single "high-level" event.
 *   **Scenario**: Detect a potential fire before the alarm pulls.
 *   **CEP Rule**: "If Temp > 80 AND Smoke > 20% over a 5s window, trigger warning."
 
----
-
-## 8. Smart Building Reference Implementation
-
+### 7.2 Smart Building Implementation (CEP in Action)
 Explore `examples/smart_building/` to see **CEP in action**:
 1.  **Start Engine**: `python app.py --log INFO`
 2.  **CEP Demo**: Trigger "High Temp" in the generator. Notice how the Tactical path waits for a trend in the telemetry window before firing.
 
+### 7.3 Anatomy of a CEP Log
+When running the Smart Building example, you will see a "narrative" of the engine thinking:
+
+```text
+INFO     🟠 [WARM] Evaluating Tactical Model 'temperature_tactical' for bldg1.hvac.telemetry (Window: 5 events)
+WARNING  ⚠️ High average temperature detected (30.1°C). Increasing cooling.
+WARNING     ∟ [WARM] Outcome: ACTION TRIGGERED -> {'action': 'set_cooling', 'value': 'high', ...}
+```
+
+**What are you looking for?**
+1.  **`Evaluating... (Window: 5 events)`**: The engine has successfully collected enough events to satisfy your window requirement (e.g., 5 seconds of telemetry).
+2.  **`⚠️ High average...`**: This is your **custom business logic** executing. It only fires when the condition (Average > 30°C) is met across the *entire* window.
+3.  **`∟ [WARM] Outcome: ACTION TRIGGERED`**: The KnwStack router has validated your rule's return value and is now dispatching the action (e.g., to NATS or a physical actuator).
+4.  **`🔵 [COLD] Evaluating...`**: Note that this often appears alongside the Warm path. This is the **Split-Brain** in action—one side is handling the reflex/tactical response, while the other is preparing a deep-reasoning prompt.
+
 ---
 
-## 9. Publishing to PyPI
+## 8. Publishing to PyPI
 
-### 9.1 Automated Publishing
-Uses the provided `.github/workflows/publish.yml` on every GitHub Release.
+KnwStack is configured for seamless distribution as a Python library.
 
-### 9.2 Setup
-Register at [pypi.org](https://pypi.org) and enable "Trusted Publishing" for the `balamuru/knwstack` repository.
+### 8.1 Building Locally
+Before publishing, you can verify your package build locally:
+```bash
+# Creates .whl and .tar.gz in the dist/ folder
+uv build
+```
+
+### 8.2 Trusted Publishing (OIDC)
+The provided GitHub Action uses **Trusted Publishing**, which is the most secure way to publish. It eliminates the need for manual API tokens or passwords.
+
+**To set this up:**
+1.  **Register**: Create a free account at [pypi.org](https://pypi.org).
+2.  **Add Publisher**: Go to your [PyPI Settings](https://pypi.org/manage/account/publishing/) and add a new **Pending Publisher**:
+    *   **PyPI Project Name**: `knwstack`
+    *   **Owner**: `balamuru`
+    *   **Repository**: `knwstack`
+    *   **Workflow Name**: `publish.yml`
+
+### 8.3 The Release Workflow
+Once Trusted Publishing is configured, you never have to publish manually again. The loop is:
+1.  **Bump Version**: Update `version = "x.y.z"` in `pyproject.toml`.
+2.  **Tag**: Create a git tag: `git tag v0.1.0`.
+3.  **Push**: `git push --tags`.
+4.  **Release**: Go to your GitHub Repository -> **Create a new release** for that tag.
+
+The [publish.yml](file:///home/vinayb/AntiGravityProjects/knwstack/.github/workflows/publish.yml) workflow will automatically build and upload the library to PyPI. Your users can then simply run `pip install knwstack`.
