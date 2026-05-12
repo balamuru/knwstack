@@ -27,6 +27,21 @@ Traditional streaming (Kafka/Flink) is built for throughput, not intelligence. T
 *   **Smart Infrastructure**: React to floor alarms instantly while reasoning about building-wide security protocols.
 *   **FinTech**: Execute local risk-checks on market ticks while a Strategic path plans long-term hedging.
 
+### 🚫 What it is NOT for
+*   **Data Lakes**: If you need to archive petabytes of history for years, use Kafka or S3.
+*   **Batch Processing**: If you are calculating 3-year averages for 1M sensors, use Spark or Polars.
+*   **Simple CRUD**: For standard web forms and profile pages, use FastAPI or Django.
+
+### ⚖️ Comparison
+
+| Feature | KnwStack | Kafka / Confluent |
+| :--- | :--- | :--- |
+| **Primary Goal** | **Intelligence Routing** | **Data Ingestion** |
+| **Philosophy** | Split-Brain (Hot/Warm/Cold) | Unified Durable Log |
+| **Infrastructure** | Single Binary (NATS) | Complex (JVM/Zookeeper) |
+| **Latency Focus** | Sub-10ms End-to-End | 50ms - 500ms Typical |
+| **DevEx** | Pure Python Decorators | Java/Scala Heavy |
+
 ---
 
 ## 🚀 Quick Start
