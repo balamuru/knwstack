@@ -1,76 +1,64 @@
-# KnwStack Framework: Technical Walkthrough
-*Professionalization & Production Readiness Milestone*
+# KnwStack Technical Deep Dive
+*A Code-Level Walkthrough of the Split-Brain Engine*
 
-KnwStack is a high-performance Real-Time AI framework that enables the "Split-Brain" architecture. This document provides a deep dive into the implementation details of the core engine, developer abstractions, and the infrastructure that ensures production stability.
-
----
-
-## 1. Project Initialization & Dependencies
-
-The codebase utilizes modern, high-performance dependencies managed by **`uv`**. The core logic is structured neatly under `src/knwstack`:
-
-*   **`api/`**: Developer abstractions and decorator registries.
-*   **`connectors/`**: Native and custom Pathway connectors (e.g., NATS).
-*   **`engine/router.py`**: The Pathway Core Router and Multi-Tier Dataflow.
-*   **`cli/`**: Tooling for scaffolding and management.
+This document explores the internal implementation of KnwStack. It is intended for developers who want to understand how Python decorators are transformed into a high-performance, incremental dataflow.
 
 ---
 
-## 2. The Developer API (Decorators)
+## 1. The Registry Bridge (`api/decorators.py`)
 
-In `api/decorators.py`, we implemented a global registry system. This allows developers to tag their Python functions with `@reflex_rule`, `@tactical_model`, or `@strategic_prompt`.
+The core of the developer experience is the `RuleRegistry`. Unlike many frameworks that use complex inheritance, KnwStack uses a simple metadata store.
 
-> **Rule Registry Isolation**: To support robust unit testing, we implemented a `RuleRegistry.clear()` method and an autouse fixture in `tests/conftest.py`. This ensures every test run starts with a clean slate, preventing state leakage between test cases.
+### 1.1 Metadata Storage
+When you use `@reflex_rule`, the decorator doesn't wrap the function in a complex class. Instead, it registers the function and its subject filter into a global dictionary:
+```python
+# Internal structure
+self.reflex_rules = {
+    "telemetry.>": [func1, func2],
+    "alarms.*": [func3]
+}
+```
 
----
-
-## 3. The Core Pathway Engine & Multi-Tier Routing
-
-The heart of KnwStack is in `engine/router.py`. We utilize **Pathway**, a high-performance Rust-backed streaming engine, to build the dataflow.
-
-### 3.1 Custom NATS Ingestion
-We implemented a custom `NatsSource` that utilizes `pw.io.python.read`. This gives us full control over message metadata (like subjects) and ensures stable, deterministic ingestion which is critical for Pathway's incremental engine.
-
-### 3.2 Tiered Processing Paths
-The engine splits incoming events into three distinct Pathway streams:
-1.  **Reflex Path (Hot):** Sub-10ms deterministic rules.
-2.  **Tactical Path (Warm):** Windowed heuristics and CEP (Complex Event Processing).
-3.  **Strategic Path (Cold):** Asynchronous LLM reasoning via `litellm`.
+### 1.2 Test Isolation Mechanics
+In `decorators.py`, we implemented a `clear()` method. This is critical because `pytest` runs in a single process by default. Without this, rules from `test_a.py` would leak into `test_b.py`. We use an **autouse fixture** in `tests/conftest.py` to trigger this clear before every single test.
 
 ---
 
-## 4. Observability Narrative
+## 2. The Engine Dataflow (`engine/router.py`)
 
-We refactored the engine's internal routing into testable helpers (`apply_reflex`, `run_tactical`, `run_strategic`) and introduced a standardized logging narrative. 
+The `run_engine` function is where the "Split-Brain" is physically constructed. It follows a **Broadcast & Branch** pattern.
 
-Developers can now "see" the brain think in real-time using color-coded labels:
-*   `⚡ [INGEST]`: Entry point.
-*   `   ∟ [HOT]`: Immediate reflex evaluation.
-*   `🟠 [WARM]`: Windowed trend analysis (CEP).
-*   `🔵 [COLD]`: Strategic reasoning dispatch.
+### 2.1 The Ingestion Loop
+We use `pw.io.python.read` combined with our custom `NatsSource`. This is a low-level bridge that runs a polling loop inside a background thread, yielding messages to Pathway. This prevents NATS blocking from affecting the computation speed.
 
----
+### 2.2 Branch 1: The Hot Path (Reflex)
+Implemented in `apply_reflex`. This uses `pw.apply`.
+*   **Why `pw.apply`?** It is a stateless operation. It takes one row and returns one row. This is the fastest possible path in Pathway because there is no windowing or state-shuffling involved.
 
-## 5. CI/CD & Production Infrastructure
+### 2.3 Branch 2: The Warm Path (Tactical)
+Implemented in `run_tactical`. This is where the complexity increases.
+*   **Windowing**: We use `pw.temporal.sliding(duration=length_s, step=slide_s)`. Pathway's engine maintains an incremental buffer of these events.
+*   **Aggregation**: We use `.reduce()` to group events by their key (e.g., `building_id`). This is how we support **Multi-Pod Correlation**—Pathway ensures the same key always lands in the same window.
 
-### 5.1 Automated Testing (10/10 Passing)
-We established a comprehensive test suite covering everything from API decorators to the internal routing logic. The framework maintains 100% pass rates across its core functionality.
-
-### 5.2 GitHub Actions Pipeline
-A professional CI/CD pipeline was implemented in `.github/workflows/tests.yml`. 
-*   **Performance**: Uses `astral-sh/setup-uv` for lightning-fast dependency resolution.
-*   **Stability**: Resolves complex `pyarrow` build issues by using Python 3.12 and explicit Apache Arrow C++ headers.
-*   **Modern Runtime**: Opts into Node.js 24 to future-proof the workflow.
-
-### 5.3 PyPI Publishing Ready
-The project is configured for automated publishing via **Trusted Publishing (OIDC)**. A dedicated `publish.yml` workflow triggers on new GitHub Releases, building and pushing the library to PyPI securely without manual credentials.
+### 2.4 Branch 3: The Cold Path (Strategic)
+Implemented in `run_strategic`.
+*   **The Async Paradox**: Pathway is a synchronous incremental engine. If we called an LLM inside the dataflow, the entire engine would freeze.
+*   **The Solution**: We use a **Split-Handshake**. The engine prepares the prompt and emits it to a background `ThreadPoolExecutor`. The engine continues processing while the LLM reasoning happens out-of-band.
 
 ---
 
-## 6. Verification
-We verified the architecture using the **Smart Building Example** (`examples/smart_building/`). 
-*   **Interactive Testing**: Users can use the `generator.py` CLI to trigger all 4 event types (Nominal, Hot, Warm, Cold) and observe the engine's response in real-time.
-*   **Scaling Logic**: The framework is documented to scale horizontally using NATS Durable Consumer Groups and key-based partitioning.
+## 3. NATS Connector (`connectors/nats.py`)
+
+Our NATS implementation solves the **Pull-to-Stream** problem.
+
+*   **JetStream Pull**: We use a `fetch()` loop that requests small batches of messages from NATS.
+*   **Subject Filtering**: The connector automatically maps NATS hierarchy into a flat data structure that Pathway can ingest as a table with columns like `subject`, `payload`, and `timestamp`.
 
 ---
-*Documentation updated: May 2026 (Professionalization Milestone)*
+
+## 4. Operational Narrative (Observability)
+
+The "Narrative" logs are implemented using a custom `logging` wrapper that inspects the `path_type` of the rule being executed. This allows us to inject the `⚡ [INGEST]` and `🟠 [WARM]` labels at the precise moment the router dispatches a rule, providing a visual trace of the "Split-Brain" in action.
+
+---
+*Technical Deep Dive: May 2026*
