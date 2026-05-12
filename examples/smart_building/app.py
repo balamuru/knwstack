@@ -21,9 +21,9 @@ def fire_alarm_reflex(events):
 # ==========================================
 # WARM PATH: Tactical Models (< 100ms)
 # ==========================================
-@tactical_model("bldg1.hvac.telemetry")
+@tactical_model("bldg1.hvac.telemetry", window_type="sliding", length_s=5, slide_s=1)
 def temperature_tactical(events):
-    """Calculates rolling averages over the 1-second CEP window."""
+    """Calculates rolling averages over a 5-second sliding window."""
     temps = []
     for topic, data in events:
         if topic == "bldg1.hvac.telemetry":
@@ -40,7 +40,7 @@ def temperature_tactical(events):
 # ==========================================
 # COLD PATH: Strategic Prompts (Seconds)
 # ==========================================
-@strategic_prompt("bldg1.hvac.telemetry", cooldown_s=60)
+@strategic_prompt("bldg1.hvac.telemetry", cooldown_s=60, window_type="tumbling", length_s=10)
 def anomaly_strategic(events):
     """Uses an LLM to analyze complex anomalies (e.g., high power draw despite low temp)."""
     messages = []
@@ -48,7 +48,6 @@ def anomaly_strategic(events):
     
     for topic, data in events:
         if topic == "bldg1.hvac.telemetry":
-            # If drawing >10kW but temperature is <20C, something is mechanically wrong
             if data.get("power_draw_kw", 0) > 10.0 and data.get("temperature", 100) < 20.0:
                 anomalies.append(data)
                 
@@ -61,23 +60,36 @@ def anomaly_strategic(events):
         "content": f"The HVAC system is drawing over 10kW of power, but the room temperature is quite low. Here is the recent telemetry data: {anomalies}. What could cause this mechanical failure? Provide a short 2 sentence diagnosis."
     })
     
-    # Returning this payload routes it automatically to LiteLLM
     return {
-        "model": "gpt-4o-mini", # Make sure OPENAI_API_KEY is in your environment
+        "model": "gpt-4o-mini",
         "messages": messages
     }
 
+@strategic_prompt("bldg1.hvac.alarm", cooldown_s=5)
+def fire_analysis_strategic(events):
+    """Uses an LLM to analyze the cause of a fire alarm for post-mortem reporting."""
+    for topic, data in events:
+        if topic == "bldg1.hvac.alarm" and data.get("type") == "fire":
+            logger.info("🧠 Fire alarm detected. Dispatching for post-mortem AI analysis.")
+            return {
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": "You are a smart building safety inspector."},
+                    {"role": "user", "content": f"A fire alarm was just triggered in the {data.get('zone', 'unknown')} zone. The reflex system has already shut down the HVAC. Please provide a brief (1-2 sentence) safety assessment for the maintenance crew."}
+                ]
+            }
+    return None
+
 # Engine Initialization
 # ==========================================
-# Create the Bytewax dataflow graph.
-# We use HYBRID ingestion:
-# - Alarms are 'superhot' (zero-latency push)
-# - Telemetry is 'reliable' (guaranteed JetStream pull for analytics)
-flow = build_engine(
+engine = build_engine(
     nats_url="nats://localhost:4222", 
-    inputs={
-        "bldg1.hvac.alarm": "superhot",
-        "bldg1.hvac.telemetry": "reliable"
-    },
+    inputs=["bldg1.hvac.alarm", "bldg1.hvac.telemetry"],
     output_subject="bldg1.actions"
 )
+
+if __name__ == "__main__":
+    try:
+        engine.run()
+    except KeyboardInterrupt:
+        logger.info("Shutting down KnwStack Engine...")

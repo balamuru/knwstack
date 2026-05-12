@@ -5,9 +5,9 @@ description = "A high-performance, low-latency reference architecture for real-t
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "bytewax>=0.20.0",
     "nats-py>=2.8.0",
     "litellm>=1.35.0",
+    "pathway>=0.11.0",
     "pydantic>=2.7.0",
     "asyncio>=3.4.3",
     "python-dotenv>=1.2.2",

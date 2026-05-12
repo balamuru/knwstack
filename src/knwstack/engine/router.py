@@ -1,158 +1,201 @@
-import bytewax.operators as op
-import bytewax.operators.windowing as wop
-from bytewax.dataflow import Dataflow
-from litellm import completion
-import asyncio
+import pathway as pw
 import json
-
-from knwstack.connectors.nats import NatsSource, NatsCoreSource, NatsSink
-from knwstack.api.decorators import registry
-from knwstack.state.windowing import get_cep_window_config
 import logging
+from typing import Dict, Union
+
+from knwstack.api.decorators import registry
+from knwstack.connectors.nats_connector import NatsSource
 
 logger = logging.getLogger(__name__)
 
-from typing import Dict, Union
+class InputSchema(pw.Schema):
+    subject: str
+    data: dict
 
-def build_engine(
-    nats_url: str = "nats://localhost:4222", 
-    inputs: Union[str, Dict[str, str]] = "app.>", 
-    output_subject: str = "actions.>"
-):
+class KnwStackEngine:
+    """Wrapper to hold the Pathway state and allow engine.run()"""
+    def run(self):
+        logger.info("Starting Pathway Rust Engine with standard NATS connectors...")
+        pw.run()
+
+def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dict[str, str]] = "app.>", output_subject: str = "actions.>", jetstream_stream: str = None):
     """
-    Constructs the core KnwStack Dataflow.
-    Supports a single subject string or a dict mapping {subject: mode}.
+    Constructs the core KnwStack Engine using Pathway.
     """
-    flow = Dataflow("knwstack_engine")
+    if isinstance(inputs, dict):
+        subjects = list(inputs.keys())
+    elif isinstance(inputs, list):
+        subjects = inputs
+    else:
+        subjects = [inputs]
     
+    def parse_payload(payload: bytes) -> dict:
+        import json
+        try:
+            return json.loads(payload.decode())
+        except:
+            return {}
+
     # 1. INGESTION
-    # Normalize inputs to a dict: {subject: mode}
-    if isinstance(inputs, str):
-        input_map = {inputs: "reliable"}
-    else:
-        input_map = inputs
+    t = pw.io.python.read(
+        NatsSource(nats_url, subjects, jetstream=bool(jetstream_stream)),
+        schema=InputSchema
+    )
 
-    input_streams = []
-    for subject, mode in input_map.items():
-        if mode == "superhot":
-            logger.info(f"🚀 Ingesting '{subject}' in SUPERHOT mode (NATS Core Push)")
-            source = NatsCoreSource(nats_url, subject)
-        else:
-            logger.info(f"🛡️ Ingesting '{subject}' in RELIABLE mode (NATS JetStream Pull)")
-            source = NatsSource(nats_url, subject)
+    # 2. TIME & WINDOWING
+    t = t.with_columns(time=t.data["timestamp"].as_int(default=0))
+
+    # 2. HOT PATH (Reflex)
+    def apply_reflex(subject: str, data: dict) -> dict:
+        # Convert Pathway Json to native dict if necessary
+        if not isinstance(data, dict):
+            import json
+            try:
+                data = json.loads(str(data))
+            except:
+                logger.error(f"Failed to parse data for subject {subject}: {data}")
+                pass
+
+        logger.info(f"⚡ [INGEST] {subject} -> {data}")
         
-        safe_id = subject.replace(".", "_").replace(">", "all")
-        input_streams.append(op.input(f"nats_in_{safe_id}", flow, source))
-
-    # Merge all input streams into a single processing stream
-    if len(input_streams) > 1:
-        stream = op.merge("merge_inputs", *input_streams)
-    else:
-        stream = input_streams[0]
-
-    # 2. HOT PATH (REFLEX)
-    # Execute deterministic rules IMMEDIATELY without waiting for a window.
-    def execute_hot_path(msg):
-        subject, event_data = msg
-        if subject.startswith("knwstack.internal."):
-            return []
-            
-        logger.debug(f"Hot Path: Evaluating rules for subject '{subject}'")
-        actions = []
+        rule_found = False
         for rule in registry.reflex_rules:
             if rule["topic"] == subject:
-                try:
-                    # Pass as a list of one event for API consistency
-                    action = rule["func"]([msg])
-                    if action:
-                        actions.append((f"{output_subject}.reflex", action))
-                except Exception as e:
-                    logger.error(f"Reflex Error: {e}")
-        return actions
-
-    hot_actions = op.flat_map("hot_path", stream, execute_hot_path)
-
-    # 3. WARM/COLD PATHS (WINDOWED)
-    # To aggregate cross-stream events, we key by tenant ID.
-    def extract_tenant_key(msg):
-        subject, event_data = msg
-        tenant_id = subject.split(".")[0]
-        return tenant_id, msg
-
-    keyed_stream = op.map("extract_tenant", stream, extract_tenant_key)
-    clock, window = get_cep_window_config(window_size_seconds=1)
-    window_out = wop.collect_window("cep_join", keyed_stream, clock, window)
-    windowed_stream = window_out.down
-
-    def execute_warm_cold_paths(window_data):
-        tenant_id, (window_metadata, events) = window_data
-        if tenant_id != "knwstack":
-            logger.info(f"Engine: Processing window for tenant '{tenant_id}' with {len(events)} events.")
+                rule_found = True
+                logger.info(f"   ∟ [HOT] Matching Rule: {rule['func'].__name__}")
+                action = rule["func"]([(subject, data)])
+                if action:
+                    logger.warning(f"   ∟ [HOT] Outcome: ACTION TRIGGERED -> {action}")
+                    return {"subject": f"{output_subject}.reflex", "data": action}
         
-        actions_to_publish = []
-        triggered_subjects = set([e[0] for e in events])
-        
-        # --- PATH 2: TACTICAL (WARM) ---
-        for model in registry.tactical_models:
-            if model["topic"] in triggered_subjects:
-                try:
-                    action = model["func"](events)
-                    if action:
-                        actions_to_publish.append((f"{output_subject}.tactical", action))
-                except Exception as e:
-                    logger.error(f"Tactical Error: {e}")
+        if rule_found:
+            logger.info("   ∟ [HOT] Outcome: No action taken (logic conditions not met)")
+        else:
+            logger.debug(f"   ∟ [HOT] Outcome: No matching reflex rules for {subject}")
+            
+        return {}
 
-        # --- PATH 3: STRATEGIC (COLD) ---
-        for prompt_cfg in registry.strategic_prompts:
-            if prompt_cfg["topic"] in triggered_subjects:
-                def _run_strategic():
+    hot_actions = t.select(result=pw.apply(apply_reflex, t.subject, t.data))
+    def is_valid(r: dict) -> bool:
+        return bool(r)
+
+    hot_actions = hot_actions.filter(pw.apply(is_valid, hot_actions.result))
+    
+    # WRITE (Using standard Pathway NATS connector)
+    pw.io.nats.write(
+        hot_actions.select(
+            subject=hot_actions.result["subject"],
+            data=hot_actions.result["data"]
+        ),
+        nats_url,
+        topic=f"{output_subject}.reflex",
+        format="json"
+    )
+
+    # 3. WARM PATH (Tactical)
+    for model in registry.tactical_models:
+        topic = model["topic"]
+        model_table = t.filter(t.subject == topic)
+        
+        # Configure Window
+        if model.get("window_type") == "sliding":
+            window = pw.temporal.sliding(duration=model["length_s"] * 1000, hop=model["slide_s"] * 1000)
+        else:
+            window = pw.temporal.tumbling(duration=model["length_s"] * 1000)
+
+        def run_tactical(events_list: list) -> dict:
+            if not events_list: return {}
+            
+            # Convert Pathway Json objects to native dicts
+            import json
+            py_events = []
+            for d in events_list:
+                if not isinstance(d, dict):
                     try:
-                        asyncio.run(_execute_strategic_async(prompt_cfg, events, output_subject, nats_url))
-                    except Exception as e:
-                        logger.error(f"Strategic Thread Error: {e}")
-                
-                import threading
-                threading.Thread(target=_run_strategic, daemon=True).start()
+                        d = json.loads(str(d))
+                    except:
+                        pass
+                py_events.append((topic, d))
+            
+            logger.info(f"🟠 [WARM] Evaluating Tactical Model '{model['func'].__name__}' for {topic} (Window: {len(py_events)} events)")
+            action = model["func"](py_events)
+            if action:
+                logger.warning(f"   ∟ [WARM] Outcome: ACTION TRIGGERED -> {action}")
+                return {"subject": f"{output_subject}.tactical", "data": action}
+            
+            logger.info("   ∟ [WARM] Outcome: No action taken")
+            return {}
 
-        return actions_to_publish
-
-    warm_cold_actions = op.flat_map("warm_cold_paths", windowed_stream, execute_warm_cold_paths)
-
-    # 4. DISPATCH
-    # We output Hot Path and Warm Path independently so the fast Hot Path 
-    # is NEVER blocked by the windowing watermark of the Warm Path.
-    op.output("nats_out_hot", hot_actions, NatsSink(nats_url))
-    op.output("nats_out_warm", warm_cold_actions, NatsSink(nats_url))
-
-    return flow
-
-async def _execute_strategic_async(prompt_cfg, events, output_subject, nats_url):
-    """Executes the LLM prompt asynchronously to prevent blocking the hot path."""
-    try:
-        # Construct the prompt using the user's registered function
-        messages = prompt_cfg["func"](events)
-        
-        if not messages:
-            return
-
-        # Call the LLM using LiteLLM (automatically handles OpenAI, Anthropic, etc.)
-        # The specific model is configured by the user in the prompt function
-        # For default, we assume the user returns a valid LiteLLM messages payload
-        from litellm import acompletion
-        response = await acompletion(
-            model=messages.get("model", "gpt-3.5-turbo"),
-            messages=messages["messages"]
+        warm_result = model_table.windowby(model_table.time, window=window).reduce(
+            result=pw.apply(run_tactical, pw.reducers.tuple(pw.this.data))
         )
+        warm_result = warm_result.filter(pw.apply(is_valid, warm_result.result))
         
-        llm_content = response.choices[0].message.content
-        logger.info(f"✅ Strategic Path: LLM Diagnosis received: {llm_content}")
+        pw.io.nats.write(
+            warm_result.select(
+                subject=warm_result.result["subject"],
+                data=warm_result.result["data"]
+            ),
+            nats_url,
+            topic=f"{output_subject}.tactical",
+            format="json"
+        )
+
+    # 4. COLD PATH (Strategic)
+    for prompt_cfg in registry.strategic_prompts:
+        topic = prompt_cfg["topic"]
+        prompt_table = t.filter(t.subject == topic)
         
-        # Publish the result back to NATS
-        import nats
-        nc = await nats.connect(nats_url)
-        payload = json.dumps({"reasoning": llm_content, "source_events": len(events)}).encode()
-        await nc.publish(f"{output_subject}.strategic", payload)
-        await nc.close()
+        if prompt_cfg.get("window_type") == "sliding":
+            window = pw.temporal.sliding(duration=prompt_cfg["length_s"] * 1000, hop=prompt_cfg["slide_s"] * 1000)
+        else:
+            window = pw.temporal.tumbling(duration=prompt_cfg["length_s"] * 1000)
+
+        # Pathway native Async UDFs
+        async def run_strategic(events_list: list) -> dict:
+            if not events_list: return {}
+            
+            # Convert Pathway Json objects to native dicts
+            import json
+            py_events = []
+            for d in events_list:
+                if not isinstance(d, dict):
+                    try:
+                        d = json.loads(str(d))
+                    except:
+                        pass
+                py_events.append((topic, d))
+            
+            logger.info(f"🔵 [COLD] Evaluating Strategic Prompt '{prompt_cfg['func'].__name__}' for {topic} (Window: {len(py_events)} events)")
+            messages = prompt_cfg["func"](py_events)
+            if not messages: 
+                logger.info("   ∟ [COLD] Outcome: No anomalies detected")
+                return {}
+            
+            from litellm import acompletion
+            try:
+                logger.warning(f"   ∟ [COLD] Outcome: DISPATCHING TO LLM -> {messages.get('model', 'gpt-4o-mini')}")
+                res = await acompletion(model=messages.get("model", "gpt-4o-mini"), messages=messages["messages"])
+                content = res.choices[0].message.content
+                logger.info(f"✅ [COLD] Strategic Path: LLM Diagnosis received: {content}")
+                return {"subject": f"{output_subject}.strategic", "data": {"reasoning": content, "source_events": len(py_events)}}
+            except Exception as e:
+                logger.error(f"❌ [COLD] Strategic LLM Error: {e}")
+                return {}
+
+        cold_result = prompt_table.windowby(prompt_table.time, window=window).reduce(
+            result=pw.apply(run_strategic, pw.reducers.tuple(pw.this.data))
+        )
+        cold_result = cold_result.filter(pw.apply(is_valid, cold_result.result))
         
-    except Exception as e:
-        logger.error(f"Strategic LLM Error: {e}")
+        pw.io.nats.write(
+            cold_result.select(
+                subject=cold_result.result["subject"],
+                data=cold_result.result["data"]
+            ),
+            nats_url,
+            topic=f"{output_subject}.strategic",
+            format="json"
+        )
+
+    return KnwStackEngine()

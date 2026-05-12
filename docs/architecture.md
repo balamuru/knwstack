@@ -11,7 +11,7 @@ KnwStack acts as an opinionated Complex Event Processing (CEP) router. It ingest
 
 ## 2. High-Level System Architecture
 
-KnwStack is built on a **Python + Rust Edge Stack** utilizing NATS JetStream for messaging and Bytewax for stateful stream processing.
+KnwStack is built on a **Python + Rust Edge Stack** utilizing NATS JetStream for messaging and Pathway for stateful stream processing.
 
 ```mermaid
 graph TD
@@ -24,7 +24,7 @@ graph TD
         NATS[(NATS JetStream)]
     end
 
-    subgraph knwstack_engine ["KnwStack Bytewax Engine (Rust/Python)"]
+    subgraph knwstack_engine ["KnwStack Pathway Engine (Rust/Python)"]
         Ingest[Input Connector] --> Router{Multi-Tier Router}
         
         %% State Management
@@ -86,7 +86,7 @@ sequenceDiagram
 
 ### 3.2 Multi-Tenant Concurrency
 
-KnwStack supports executing entirely isolated business logic for different tenants simultaneously by leveraging NATS topic hierarchies (`tenant.app.event`) and Bytewax's distributed workers.
+KnwStack supports executing entirely isolated business logic for different tenants simultaneously by leveraging NATS topic hierarchies (`tenant.app.event`) and Pathway's high-performance parallel processing.
 
 ```mermaid
 sequenceDiagram
@@ -149,10 +149,10 @@ sequenceDiagram
 *   **Rationale:** Kafka is the undisputed standard for enterprise big data, but it carries immense operational overhead, JVM memory bloat, and Zookeeper/KRaft complexity. NATS is a single, lightweight Go binary that provides the required at-least-once/exactly-once delivery, replayability, and high-throughput routing necessary for a responsive Edge AI framework.
 *   **Multi-Tenancy:** NATS subject-based routing (`tenantA.app1.telemetry`) is highly flexible, allowing the framework to subscribe to wildcard patterns and isolate tenant data natively.
 
-### 4.2 Stream Processing: Bytewax (Python/Rust) over Apache Flink (Java)
-*   **Decision:** The core CEP engine and state management are built using Bytewax instead of Java-based Apache Flink.
-*   **Rationale:** To provide a best-in-class developer experience for AI engineers, the framework's API must be Python. However, pure Python stream processors usually lack the performance needed for the Hot Path (<10ms). Bytewax solves this: it is a Python API wrapped around the **Timely Dataflow** engine written in **Rust**.
-*   **Impact:** We achieve the extreme performance, memory safety, and native stateful windowing of a compiled language (Rust), while allowing the end-user to write their `@reflex_rule` and `@strategic_prompt` logic entirely in Python. This eliminates the need to maintain a complex Polyglot (Java + Python) architecture.
+### 4.2 Stream Processing: Pathway (Python/Rust) over Apache Flink (Java)
+*   **Decision:** The core CEP engine and state management are built using Pathway instead of Java-based Apache Flink.
+*   **Rationale:** To provide a best-in-class developer experience for AI engineers, the framework's API must be Python. However, pure Python stream processors usually lack the performance needed for the Hot Path (<10ms). Pathway solves this: it is a high-performance, incremental processing engine with a Rust-backed core and a pure Python API.
+*   **Impact:** We achieve the extreme performance, memory safety, and native stateful windowing of a compiled language (Rust), while allowing the end-user to write their `@reflex_rule` and `@strategic_prompt` logic entirely in Python. This eliminates the need to maintain a complex Polyglot (Java + Python) architecture. Pathway's incremental computation model also ensures that only changes in the data stream are processed, leading to unmatched efficiency.
 
 ### 4.3 AI Orchestration: LiteLLM
 *   **Decision:** We use LiteLLM for routing calls to external models instead of heavy orchestration frameworks like LangChain (for the core routing layer).

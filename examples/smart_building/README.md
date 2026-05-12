@@ -1,35 +1,22 @@
 # Smart Building Reference Implementation
 
-This example demonstrates how to build a KnwStack application that processes HVAC telemetry from a smart building. 
+This example demonstrates how to build a KnwStack application that processes HVAC telemetry from a smart building using the **Split-Brain Architecture**.
 
-It highlights the **Split-Brain Architecture** by implementing:
-1. **Hot Path (Reflex)**: Instant HVAC shutdown upon detecting a fire alarm.
-2. **Warm Path (Tactical)**: 1-second rolling averages of temperature to adjust cooling.
-3. **Cold Path (Strategic)**: Asynchronous LLM reasoning to diagnose complex anomalies (e.g., high power draw despite low temperature).
+## 1. Setup & Activate
 
-## Prerequisites
-
-1. Ensure the NATS infrastructure is running from the root of the project:
-   ```bash
-   docker compose up -d
-   ```
-
-2. **Python Environment**: KnwStack uses a virtual environment managed by `uv`. You have two options for running commands:
-   *   **Using `uv run` (Recommended)**: Prefix commands with `uv run` (e.g., `uv run python ...`). This handles the environment automatically and ensures your dependencies are in sync.
-   *   **Manual Activation**: Activate the environment manually if you prefer not to type the prefix:
-       ```bash
-       source .venv/bin/activate
-       ```
-
-## Step 1: Run the Application
-
-The KnwStack framework operates over the Bytewax stream processing engine. You run your application by passing your Python file and the compiled `flow` object to the Bytewax runner.
-
-Run this from the `examples/smart_building` directory:
+Ensure NATS is running in the root directory (`docker compose up -d`). Then, set up and activate your environment:
 
 ```bash
-cd examples/smart_building/
-uv run python -m bytewax.run app:flow
+uv sync
+source .venv/bin/activate
+```
+
+## 2. Run the Application
+
+Once activated, you can run the application directly with plain Python:
+
+```bash
+python app.py
 ```
 
 ### 🚀 Hybrid Performance
@@ -39,30 +26,54 @@ This example is configured in **Hybrid Mode** by default:
 
 The framework automatically provisions the necessary NATS JetStream infrastructure on startup.
 
-## Step 2: Inject Telemetry (Test the System)
+## 3. Test the System (Interactive Menu)
 
-In a new terminal window, use the provided `generator.py` script to simulate different real-world scenarios. 
+The easiest way to test the system is to use the **Interactive Generator**. In a new terminal window, **activate the venv** and run:
 
-**Nominal Telemetry (Reliable Path)**
 ```bash
-uv run python generator.py --mode telemetry
+python generator.py
 ```
 
-**Hot Path (Immediate Reflex)**
-```bash
-uv run python generator.py --mode fire_alarm
-```
-*Look at the engine terminal: You will see the Sub-10ms Reflex Rule trigger an immediate shutdown.*
+This will open a color-coded menu where you can trigger each path (Nominal, Hot, Warm, Cold) as many times as you like without restarting.
 
-**Warm Path (Tactical Response)**
-```bash
-uv run python generator.py --mode high_temp
-```
-*Look at the engine terminal: The Tactical Model will calculate the 1-second rolling average and trigger a cooling increase.*
+### Scenario Definitions
+If you prefer single-shot commands, you can still use the `--mode` flag:
 
-**Cold Path (Strategic Diagnosis)**
+### A. Nominal Telemetry (Reliable Path)
+**What it does**: Simulates standard room temperature and power usage data flowing into the system. This populates the "Reliable" stream, ensuring that history is available for subsequent Tactical or Strategic analysis.
+```bash
+python generator.py --mode telemetry
+```
+**Expected Output**: The engine terminal will show silent ingestion.
+**Why**: Nominal data doesn't require immediate action; it is stored to build context for the rolling windows used by the Warm and Cold paths.
+
+---
+
+### B. Hot Path: Fire Alarm (Immediate Reflex)
+**What it does**: Injects a high-priority "fire" alarm event.
+```bash
+python generator.py --mode fire_alarm
+```
+**Expected Output**: `🚨 FIRE ALARM DETECTED! Executing reflex action: SHUTDOWN HVAC`
+**Why**: In a fire, every millisecond counts to prevent the ventilation system from spreading smoke. The **Reflex Path** bypasses all windowing and complex logic to execute a deterministic shutdown in <10ms.
+
+---
+
+### C. Warm Path: High Temp (Tactical Response)
+**What it does**: Injects a series of temperature readings exceeding 28°C.
+```bash
+python generator.py --mode high_temp
+```
+**Expected Output**: `⚠️ High average temperature detected (...°C). Increasing cooling.`
+**Why**: HVAC systems shouldn't react to a single "jittery" sensor reading. The **Tactical Path** uses a 5-second sliding window to calculate a rolling average. This ensures the cooling system only ramps up if the heat is sustained, preventing inefficient equipment "cycling."
+
+---
+
+### D. Cold Path: Anomaly Detection (Strategic Diagnosis)
+**What it does**: Injects an anomalous state: High Power Draw (>10kW) but Low Temperature (<20°C).
 ```bash
 # Ensure you have OPENAI_API_KEY in your .env or environment!
-uv run python generator.py --mode anomaly
+python generator.py --mode anomaly
 ```
-*Look at the engine terminal: The Strategic Prompt will detect the mismatch between power draw and temperature, gather the context window, and asynchronously ask the LLM for a diagnosis.*
+**Expected Output**: `🧠 Anomalous power/temp correlation detected. Dispatching to LLM...` followed by an AI diagnosis.
+**Why**: This scenario indicates a mechanical failure (e.g., a frozen compressor or a stuck valve) that simple rules cannot diagnose. The **Strategic Path** captures the last 10 seconds of context and sends it to an LLM to provide a reasoned diagnosis without blocking the critical Reflex or Tactical paths.

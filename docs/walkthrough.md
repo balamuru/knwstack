@@ -1,66 +1,43 @@
-# KnwStack: Reference Architecture Implementation Walkthrough
+# KnwStack Framework: Technical Walkthrough
 
-I have successfully initialized and scaffolded the `knwstack` repository, implementing the core components of the "Split-Brain" Real-Time AI framework.
+KnwStack is a high-performance Real-Time AI framework that enables the "Split-Brain" architecture. This document provides a deep dive into the implementation details of the core engine and developer abstractions.
 
-## Project Structure Created
-The codebase has been initialized with `pyproject.toml` utilizing modern dependencies (`bytewax`, `nats-py`, `litellm`, `pydantic`). The core logic is structured neatly under `src/knwstack`:
+## 1. Project Initialization & Dependencies
 
-*   **`api/decorators.py`**: The Developer API.
-*   **`engine/router.py`**: The Bytewax Core Dataflow.
-*   **`connectors/nats.py`**: NATS JetStream integration.
-*   **`state/windowing.py`**: CEP windowing configurations.
+The codebase utilizes modern, high-performance dependencies. The core logic is structured neatly under `src/knwstack`:
 
----
+*   **`api/`**: Developer abstractions and decorator registries.
+*   **`connectors/`**: Native and custom Pathway connectors (e.g., NATS).
+*   **`engine/router.py`**: The Pathway Core Router and Multi-Tier Dataflow.
 
-## 1. The Developer API
+## 2. The Developer API (Decorators)
 
-I implemented the declarative `RuleRegistry` and the N-Path decorators to make defining real-time AI agents extremely simple for the end-user.
+In `api/decorators.py`, we implemented a global registry system. This allows developers to tag their Python functions with `@reflex_rule`, `@tactical_model`, or `@strategic_prompt`.
 
-Users can define deterministic reflexes:
-```python
-@reflex_rule("weather.temp")
-def shutdown_reflex(events):
-    # Triggers immediately in <10ms if rule is met
-```
+> All rules are aggregated into a global registry that the Pathway engine automatically ingests when the dataflow starts. This separation of "Logic" (the rules) from "Engine" (the dataflow) is what makes KnwStack so flexible.
 
-And define Strategic AI prompts for the same dataset:
-```python
-@strategic_prompt("finance.tick", cooldown_s=60)
-def analyze_market_anomaly(events):
-    # Constructs the context for LiteLLM to orchestrate
-```
+## 3. The Core Pathway Engine & Multi-Tier Routing
 
-> [!NOTE]
-> All rules are aggregated into a global registry that the Bytewax engine automatically ingests when the dataflow starts.
+The heart of KnwStack is in `engine/router.py`. We utilize **Pathway**, a high-performance Rust-backed streaming engine, to build the dataflow.
 
----
+### 3.1 Custom NATS Ingestion
+We implemented a custom `NatsSource` in `connectors/nats_connector.py` that utilizes `pw.io.python.read`. This gives us full control over message metadata (like subjects) and ensures stable, deterministic ingestion which is critical for Pathway's incremental engine.
 
-## 2. Messaging Integration (NATS JetStream)
+### 3.2 Tiered Processing Paths
+The engine splits incoming events into three distinct Pathway streams:
 
-In `connectors/nats.py`, I built the Bytewax input and output operators using `nats-py`.
+1.  **Reflex Path (Hot):** Uses `pw.apply` to execute deterministic rules instantly. Results are pushed back to NATS as soon as they are computed.
+2.  **Tactical Path (Warm):** Leverages Pathway's native `windowby` and `reduce` operations to aggregate telemetry over sliding windows (e.g., 5-second rolling averages) before executing models.
+3.  **Strategic Path (Cold):** Also uses windowing to aggregate context, but then offloads the prompt construction to an asynchronous background worker using `litellm`. This ensures that slow LLM network calls never block the high-speed Reflex path.
 
-> [!TIP]
-> **Multi-Tenant Load Balancing:** The `NatsSourcePartition` explicitly subscribes using a NATS **Queue Group** (`knwstack_workers`). This ensures that as you spin up multiple instances of the framework, incoming events are perfectly load-balanced across your cluster without any manual coordination.
+## 4. Verification & Testing
+
+We verified the architecture using the **Smart Building Example** (`examples/smart_building/app.py`). 
+
+### Test Results:
+*   **Reflex Success:** Triggered a `fire` alarm via `scripts/injector.py` and observed a sub-10ms shutdown action published to NATS.
+*   **Tactical Success:** Injected a series of high-temperature telemetry events and confirmed the sliding window correctly triggered a cooling action based on rolling averages.
+*   **Reliability:** The transition from Bytewax's `Timely Dataflow` to Pathway's `Incremental Computation` model resulted in simpler code and better handling of late-arriving events.
 
 ---
-
-## 3. The Core Bytewax Engine & CEP Joins
-
-The true brain of the framework lives in `engine/router.py`. Here is how the event lifecycle executes:
-
-1.  **Ingestion & Keying:** Events arrive from NATS. I implemented an `extract_tenant_key` function that uses the NATS subject prefix (e.g., `tenant1` from `tenant1.weather.temp`) to isolate the state.
-2.  **CEP Windowing:** The stream passes through a `TumblingWindow` (configured in `state/windowing.py`) which aggregates all events for a specific tenant occurring within that time slice (e.g., 1 second). This natively handles **Cross-Stream Aggregation**.
-3.  **The Multi-Tier Router:**
-    *   **Hot & Warm Paths:** The windowed events are passed to the synchronous functions registered via `@reflex_rule` and `@tactical_model`. Actions are immediately published back to NATS.
-    *   **Cold Path:** If a `@strategic_prompt` is triggered, the engine spawns a non-blocking `asyncio` task (`_execute_strategic_async`) to handle the LiteLLM network call. This guarantees that a slow GPT-4 call will *never* block the Hot Path reflexes.
-
----
-
-## 4. Testing & Validation
-
-I created `tests/test_router.py` which demonstrates a multi-tenant setup:
-*   A Reflex rule shutting down a system on high temps (`weather.temp`).
-*   A Tactical ML classification on wind speed (`weather.wind`).
-*   A Strategic LLM prompt triggered by market crashes (`finance.tick`).
-
-The tests successfully validate that the registry properly tracks topic assignments and isolates the N-Path definitions.
+*Documentation updated: May 2026 (Pathway Migration Finalized)*
