@@ -163,6 +163,12 @@ cd examples/smart_building
 python app.py
 ```
 
+In a separate terminal, use the **interactive generator** to trigger events:
+```bash
+cd examples/smart_building
+python generator.py
+```
+
 ## Directory Structure
 
 ```text

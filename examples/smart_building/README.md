@@ -26,9 +26,18 @@ This example is configured in **Hybrid Mode** by default:
 
 The framework automatically provisions the necessary NATS JetStream infrastructure on startup.
 
-## 3. Test the System (The N-Path Flow)
+## 3. Test the System (Interactive Menu)
 
-In a new terminal window, **activate the venv**, and use the provided `generator.py` script to simulate different real-world scenarios.
+The easiest way to test the system is to use the **Interactive Generator**. In a new terminal window, **activate the venv** and run:
+
+```bash
+python generator.py
+```
+
+This will open a color-coded menu where you can trigger each path (Nominal, Hot, Warm, Cold) as many times as you like without restarting.
+
+### Scenario Definitions
+If you prefer single-shot commands, you can still use the `--mode` flag:
 
 ### A. Nominal Telemetry (Reliable Path)
 **What it does**: Simulates standard room temperature and power usage data flowing into the system. This populates the "Reliable" stream, ensuring that history is available for subsequent Tactical or Strategic analysis.

@@ -47,7 +47,6 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
 
     # 2. HOT PATH (Reflex)
     def apply_reflex(subject: str, data: dict) -> dict:
-        logger.info(f"Applying reflex check for subject: {subject}")
         # Convert Pathway Json to native dict if necessary
         if not isinstance(data, dict):
             import json
@@ -57,12 +56,23 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
                 logger.error(f"Failed to parse data for subject {subject}: {data}")
                 pass
 
+        logger.info(f"⚡ [INGEST] {subject} -> {data}")
+        
+        rule_found = False
         for rule in registry.reflex_rules:
             if rule["topic"] == subject:
-                logger.info(f"Found matching reflex rule for {subject}")
+                rule_found = True
+                logger.info(f"   ∟ [HOT] Matching Rule: {rule['func'].__name__}")
                 action = rule["func"]([(subject, data)])
                 if action:
+                    logger.warning(f"   ∟ [HOT] Outcome: ACTION TRIGGERED -> {action}")
                     return {"subject": f"{output_subject}.reflex", "data": action}
+        
+        if rule_found:
+            logger.info("   ∟ [HOT] Outcome: No action taken (logic conditions not met)")
+        else:
+            logger.debug(f"   ∟ [HOT] Outcome: No matching reflex rules for {subject}")
+            
         return {}
 
     hot_actions = t.select(result=pw.apply(apply_reflex, t.subject, t.data))
@@ -107,9 +117,13 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
                         pass
                 py_events.append((topic, d))
             
+            logger.info(f"🟠 [WARM] Evaluating Tactical Model '{model['func'].__name__}' for {topic} (Window: {len(py_events)} events)")
             action = model["func"](py_events)
             if action:
+                logger.warning(f"   ∟ [WARM] Outcome: ACTION TRIGGERED -> {action}")
                 return {"subject": f"{output_subject}.tactical", "data": action}
+            
+            logger.info("   ∟ [WARM] Outcome: No action taken")
             return {}
 
         warm_result = model_table.windowby(model_table.time, window=window).reduce(
@@ -151,18 +165,22 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
                     except:
                         pass
                 py_events.append((topic, d))
-                
+            
+            logger.info(f"🔵 [COLD] Evaluating Strategic Prompt '{prompt_cfg['func'].__name__}' for {topic} (Window: {len(py_events)} events)")
             messages = prompt_cfg["func"](py_events)
-            if not messages: return {}
+            if not messages: 
+                logger.info("   ∟ [COLD] Outcome: No anomalies detected")
+                return {}
             
             from litellm import acompletion
             try:
-                res = await acompletion(model=messages.get("model", "gpt-3.5-turbo"), messages=messages["messages"])
+                logger.warning(f"   ∟ [COLD] Outcome: DISPATCHING TO LLM -> {messages.get('model', 'gpt-4o-mini')}")
+                res = await acompletion(model=messages.get("model", "gpt-4o-mini"), messages=messages["messages"])
                 content = res.choices[0].message.content
-                logger.info(f"✅ Strategic Path: LLM Diagnosis received: {content}")
+                logger.info(f"✅ [COLD] Strategic Path: LLM Diagnosis received: {content}")
                 return {"subject": f"{output_subject}.strategic", "data": {"reasoning": content, "source_events": len(py_events)}}
             except Exception as e:
-                logger.error(f"Strategic LLM Error: {e}")
+                logger.error(f"❌ [COLD] Strategic LLM Error: {e}")
                 return {}
 
         cold_result = prompt_table.windowby(prompt_table.time, window=window).reduce(

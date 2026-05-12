@@ -65,6 +65,21 @@ def anomaly_strategic(events):
         "messages": messages
     }
 
+@strategic_prompt("bldg1.hvac.alarm", cooldown_s=5)
+def fire_analysis_strategic(events):
+    """Uses an LLM to analyze the cause of a fire alarm for post-mortem reporting."""
+    for topic, data in events:
+        if topic == "bldg1.hvac.alarm" and data.get("type") == "fire":
+            logger.info("🧠 Fire alarm detected. Dispatching for post-mortem AI analysis.")
+            return {
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": "You are a smart building safety inspector."},
+                    {"role": "user", "content": f"A fire alarm was just triggered in the {data.get('zone', 'unknown')} zone. The reflex system has already shut down the HVAC. Please provide a brief (1-2 sentence) safety assessment for the maintenance crew."}
+                ]
+            }
+    return None
+
 # Engine Initialization
 # ==========================================
 engine = build_engine(
