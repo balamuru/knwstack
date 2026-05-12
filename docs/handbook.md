@@ -117,3 +117,29 @@ To see these concepts in action, explore `examples/smart_building/`:
 2.  **Trigger Events**: `python generator.py`
 
 This example demonstrates **Hybrid Ingestion**: using SuperHot (Push) subjects for Alarms and Reliable (Pull) subjects for Telemetry, ensuring both speed and integrity.
+
+---
+
+## 7. Publishing to PyPI
+
+KnwStack is configured to be published as a library via PyPI.
+
+### 7.1 Automated Publishing
+A GitHub Action is provided in `.github/workflows/publish.yml` that triggers whenever a new GitHub Release is published.
+
+### 7.2 One-Time Setup (Trusted Publishing)
+To enable the automated workflow:
+1.  **Register**: Create a free account at [pypi.org](https://pypi.org).
+2.  **Add Publisher**: In PyPI Settings, add a new "Pending Publisher":
+    *   **PyPI Project Name**: `knwstack`
+    *   **Owner**: `balamuru`
+    *   **Repository**: `knwstack`
+    *   **Workflow Name**: `publish.yml`
+3.  **Release**: Create a new release on GitHub with a version tag (e.g., `v0.1.0`).
+
+### 7.3 Manual Publishing
+If you prefer to publish manually from your local machine:
+```bash
+uv build
+uv publish
+```

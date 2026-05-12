@@ -4,6 +4,20 @@ version = "0.1.0"
 description = "A high-performance, low-latency reference architecture for real-time AI inference."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+    { name = "Vinay B" }
+]
+keywords = ["ai", "streaming", "pathway", "nats", "llm", "real-time"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "nats-py>=2.8.0",
     "litellm>=1.35.0",
@@ -11,6 +25,11 @@ dependencies = [
     "pydantic>=2.7.0",
     "python-dotenv>=1.2.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/balamuru/knwstack"
+Repository = "https://github.com/balamuru/knwstack"
+Documentation = "https://github.com/balamuru/knwstack/blob/main/docs/handbook.md"
 
 [project.scripts]
 knwstack-scaffold = "knwstack.cli.scaffold:main"
