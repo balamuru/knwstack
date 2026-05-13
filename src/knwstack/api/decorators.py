@@ -17,13 +17,14 @@ class RuleRegistry:
     def register_reflex(self, func: Callable, trigger_topic: str):
         self.reflex_rules.append({"func": func, "topic": trigger_topic})
 
-    def register_tactical(self, func: Callable, trigger_topic: str, window_type: str, length_s: int, slide_s: int):
+    def register_tactical(self, func: Callable, trigger_topic: str, window_type: str, length_s: int, slide_s: int, cooldown_s: int = 0):
         self.tactical_models.append({
             "func": func, 
             "topic": trigger_topic,
             "window_type": window_type,
             "length_s": length_s,
-            "slide_s": slide_s
+            "slide_s": slide_s,
+            "cooldown_s": cooldown_s
         })
 
     def register_strategic(self, func: Callable, trigger_topic: str, cooldown_s: int, window_type: str, length_s: int, slide_s: int):
@@ -52,13 +53,13 @@ def reflex_rule(trigger_topic: str):
         return wrapper
     return decorator
 
-def tactical_model(trigger_topic: str, window_type: str = "tumbling", length_s: int = 1, slide_s: int = 1):
+def tactical_model(trigger_topic: str, window_type: str = "tumbling", length_s: int = 1, slide_s: int = 1, cooldown_s: int = 0):
     """
     Decorator for the Warm Path.
     Functions decorated with this should use fast, local ML models (<100ms).
     """
     def decorator(func: Callable):
-        registry.register_tactical(func, trigger_topic, window_type, length_s, slide_s)
+        registry.register_tactical(func, trigger_topic, window_type, length_s, slide_s, cooldown_s)
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)

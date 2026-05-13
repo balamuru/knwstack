@@ -10,10 +10,13 @@ from knwstack.api.decorators import registry
 from knwstack.connectors.nats_connector import NatsSource
 
 logger = logging.getLogger(__name__)
+# Stateful tracking for cooldowns: {(model_name, key): last_execution_time}
+_last_tactical_run = {}
 
 class InputSchema(pw.Schema):
     subject: str
     data: dict
+    time: int
 
 class KnwStackEngine:
     """Wrapper to hold the Pathway state and allow engine.run()"""
@@ -76,40 +79,27 @@ def apply_reflex(subject: str, data: dict, reflex_rules: List[dict], output_subj
     return {}
 
 @pw.udf
-def get_time(data) -> int:
-    try:
-        if hasattr(data, "get"):
-            return int(data.get("timestamp", time.time() * 1000))
-        return int(data["timestamp"])
-    except:
-        return int(time.time() * 1000)
-
-@pw.udf
 def get_key(data, subject: str) -> str:
     """Strictly extracts a string key from the 'key' field. No subject fallbacks."""
     val = None
     try:
-        # If it's a string/bytes, parse it first
-        if isinstance(data, (str, bytes)):
-            try: data = json.loads(data)
-            except: pass
-        
-        if isinstance(data, dict):
+        # Pathway's Json objects in UDFs can be accessed like dicts
+        if hasattr(data, "get"):
             val = data.get("key")
-        else:
-            try: val = data["key"]
-            except: pass
+        elif isinstance(data, dict):
+            val = data.get("key")
+        
+        # If still None, try direct index (for some Pathway versions)
+        if val is None:
+            val = data["key"]
     except:
         pass
         
     if val is not None:
-        s_val = str(val).strip()
-        if s_val and not s_val.startswith("Column("):
-            return s_val
+        return str(val).strip()
 
-    # Log critical warning for missing keys - this event will be lumped into 'unknown'
-    # and likely averaged with other key-less events, polluting their state.
-    logger.critical(f"🚨 MISSING KEY for event on {subject}! Mandatory 'key' field not found. Data: {data}")
+    # Log critical warning for missing keys
+    logger.critical(f"🚨 MISSING KEY for event on {subject}! Data: {data}")
     return "unknown"
 
 def run_tactical(events_list: list, topic: str, model_cfg: dict, output_subject: str) -> dict:
@@ -118,28 +108,45 @@ def run_tactical(events_list: list, topic: str, model_cfg: dict, output_subject:
     
     py_events = []
     for item in events_list:
-        # Handle both raw data and (subject, data) tuples
         if isinstance(item, tuple) and len(item) == 2:
             s, d = item
         else:
             s, d = topic, item
             
         if not isinstance(d, dict):
-            try:
-                d = json.loads(str(d))
-            except:
-                pass
+            try: d = json.loads(str(d))
+            except: pass
         py_events.append((s, d))
+
+    # DEBUG: See what's inside the window
+    for s, d in py_events:
+        logger.info(f"      ∟ DEBUG: [In Window] key={d.get('key')} subject={s}")
     
     # Identify the partition key for logging
     partition_key = "unknown"
     if py_events:
         _, first_data = py_events[0]
         partition_key = first_data.get("key", topic.split('.')[0])
+    
+    # SAFETY SIEVE: Hard-filter the window to only events matching this partition.
+    # This prevents cross-building leakage even if the engine's groupby fails.
+    if partition_key != "unknown":
+        py_events = [e for e in py_events if e[1].get("key") == partition_key]
+    now = time.time()
+    cooldown = model_cfg.get("cooldown_s", 0)
+    cooldown_key = (model_cfg["func"].__name__, partition_key)
+    
+    if cooldown > 0:
+        last_run = _last_tactical_run.get(cooldown_key, 0)
+        if now - last_run < cooldown:
+            logger.debug(f"   ∟ [WARM] Cooldown active for {partition_key} ({now - last_run:.1f}s < {cooldown}s). Skipping.")
+            return {}
 
     logger.info(f"🟠 [WARM] Evaluating Tactical Model '{model_cfg['func'].__name__}' for {partition_key} (Window: {len(py_events)} events)")
     action = model_cfg["func"](py_events)
     if action:
+        if cooldown > 0:
+            _last_tactical_run[cooldown_key] = now
         logger.warning(f"   ∟ [WARM] Outcome: ACTION TRIGGERED -> {action}")
         return {"subject": f"{output_subject}.tactical", "data": action}
     
@@ -210,11 +217,9 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
         schema=InputSchema
     )
 
-    # 2. TIME & KEY EXTRACTION
-    # We ensure time is in milliseconds and key is always a valid string using typed UDFs
+    # 2. KEY EXTRACTION
     t = t.with_columns(
-        time=get_time(t.data),
-        key=get_key(t.data, t.subject)
+        key=pw.apply(get_key, pw.this.data, pw.this.subject)
     )
 
     # 2. HOT PATH (Reflex)
@@ -253,7 +258,8 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
         model_table = model_table.with_columns(
             event_tuple=pw.apply(lambda s, d: (s, d), model_table.subject, model_table.data)
         )
-        warm_result = model_table.groupby(model_table.key).windowby(model_table.time, window=window).reduce(
+        # LATE-BINDING FIX: Use pw.this to ensure the engine binds to the current table's columns
+        warm_result = model_table.groupby(pw.this.key).windowby(pw.this.time, window=window).reduce(
             result=pw.apply(tactical_fn, pw.reducers.tuple(pw.this.event_tuple))
         )
         warm_result = warm_result.filter(pw.apply(is_valid, warm_result.result))
@@ -285,7 +291,7 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
         prompt_table = prompt_table.with_columns(
             event_tuple=pw.apply(lambda s, d: (s, d), prompt_table.subject, prompt_table.data)
         )
-        strategic_result = prompt_table.groupby(prompt_table.key).windowby(prompt_table.time, window=window).reduce(
+        strategic_result = prompt_table.groupby(pw.this.key).windowby(pw.this.time, window=window).reduce(
             result=pw.apply(strategic_fn, pw.reducers.tuple(pw.this.event_tuple))
         )
         cold_result = strategic_result.filter(pw.apply(is_valid, strategic_result.result))

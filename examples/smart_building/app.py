@@ -27,7 +27,7 @@ def fire_alarm_reflex(events):
 # ==========================================
 # WARM PATH: Tactical Models (< 100ms)
 # ==========================================
-@tactical_model(">.telemetry", window_type="sliding", length_s=5, slide_s=1)
+@tactical_model(">.telemetry", window_type="sliding", length_s=5, slide_s=1, cooldown_s=10)
 def temperature_tactical(events):
     """Calculates rolling averages over a 5-second sliding window."""
     temps = []
@@ -38,6 +38,8 @@ def temperature_tactical(events):
     for _, data in events:
         if "temperature" in data:
             temps.append(data["temperature"])
+            
+    if temps:
         avg_temp = sum(temps) / len(temps)
         if avg_temp > 28.0:
             logger.warning(f"⚠️ [WARM] High average temperature detected in {building} ({avg_temp:.1f}°C) over {len(temps)} samples. Increasing cooling.")

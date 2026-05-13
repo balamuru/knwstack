@@ -28,8 +28,9 @@ class NatsSource(ConnectorSubject):
                 try:
                     subject = msg.subject
                     data = json.loads(msg.data.decode())
-                    # Push to Pathway with metadata
-                    self.next(subject=subject, data=data)
+                    import time
+                    # Push to Pathway with metadata and arrival timestamp
+                    self.next(subject=subject, data=data, time=int(time.time() * 1000))
                 except Exception as e:
                     logger.error(f"Error processing NATS message: {e}")
 
