@@ -17,7 +17,7 @@ class GeneratorTUI:
             ("🟢 Nominal Telemetry", self.dispatch_telemetry, "Expected: SILENT (18-28°C)"),
             ("🔴 Fire Alarm       ", self.dispatch_fire_alarm, "Expected: REFLEX ACTION"),
             ("🟠 High Temp        ", self.dispatch_high_temp, "Expected: TACTICAL ALERT"),
-            ("🔵 Anomaly          ", self.dispatch_anomaly, "Expected: STRATEGIC AI"),
+            ("🔵 CEP: Anomaly Correlation", self.dispatch_anomaly, "Expected: STRATEGIC AI (Fuses Power + Temp)"),
             ("🏢 Campus Simulation", self.dispatch_campus_simulation, "Expected: NORMAL/HOT/COLD"),
         ]
 
@@ -66,8 +66,8 @@ class GeneratorTUI:
         self.add_log("✅ High temp dispatch complete.")
 
     async def dispatch_anomaly(self):
-        self.add_log("🔵 DISPATCH: ANOMALY (Strategic Path)")
-        self.add_log("   EXPECTED: STRATEGIC AI (Concise LLM Diagnosis)")
+        self.add_log("🔵 DISPATCH: CEP ANOMALY CORRELATION (Strategic Path)")
+        self.add_log("   EXPECTED: STRATEGIC AI (Fusing High Power + Low Temp)")
         for _ in range(5):
             payload = {
                 "temperature": random.uniform(18.0, 19.5),

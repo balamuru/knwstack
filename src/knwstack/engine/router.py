@@ -20,10 +20,30 @@ class InputSchema(pw.Schema):
 
 class KnwStackEngine:
     """Wrapper to hold the Pathway state and allow engine.run()"""
+    def __init__(self):
+        self.dashboard_enabled = False
+        self.dashboard_port = 8080
+
     def run(self):
         """Starts the Pathway engine and begins processing events."""
-        logger.info("🚀 KnwStack Engine started. Monitoring event streams...")
-        pw.run(monitoring_level=pw.MonitoringLevel.NONE)
+        logger.info(f"🔧 Engine Boot: dashboard={self.dashboard_enabled}, port={self.dashboard_port}")
+        if self.dashboard_enabled:
+            import os
+            from contextlib import contextmanager
+            import pathway.internals.monitoring
+
+            # SILENCE PATCH: Disable the terminal UI dashboard while keeping the webserver active
+            @contextmanager
+            def noop_live(*args, **kwargs): yield
+            pathway.internals.monitoring.Live = noop_live
+
+            logger.info(f"📊 Monitoring Webserver enabled at http://localhost:{self.dashboard_port} (Terminal UI Silenced)")
+            os.environ["PATHWAY_WEBSERVER_PORT"] = str(self.dashboard_port)
+            os.environ["PATHWAY_MONITORING_HTTP_PORT"] = str(self.dashboard_port)
+            pw.run(monitoring_level=pw.MonitoringLevel.ALL, with_http_server=True)
+        else:
+            logger.info("🚀 KnwStack Engine started. Monitoring event streams...")
+            pw.run(monitoring_level=pw.MonitoringLevel.NONE, with_http_server=False)
 
 # ==========================================
 # Logic Helpers (Extracted for Testing)

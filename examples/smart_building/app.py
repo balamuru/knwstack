@@ -104,13 +104,48 @@ engine = build_engine(
 )
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="KnwStack Smart Building Example")
-    parser.add_argument("--log", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO", help="Set the logging level (default: INFO)")
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(
+        description="""
+    🏢 KnwStack Smart Building Reference Implementation
+
+    This application demonstrates the 'Split-Brain' architecture:
+    - HOT Path: Instant reflex actions (Fire Alarms)
+    - WARM Path: Tactical streaming models (Rolling Averages)
+    - COLD Path: Strategic AI diagnostics (LLM Anomaly Detection)
     
+    Ensure NATS is running at nats://localhost:4222 before starting.
+    """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    
+    parser.add_argument(
+        "--log", 
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
+        default="INFO", 
+        help="Set the logging level (default: INFO)"
+    )
+    
+    parser.add_argument(
+        "--dashboard", 
+        action="store_true", 
+        help="Enable the Pathway Monitoring Dashboard (Web UI)"
+    )
+    
+    parser.add_argument(
+        "--port", 
+        type=int, 
+        default=8080, 
+        help="Port for the Monitoring Dashboard (default: 8080)"
+    )
+    
+    args = parser.parse_args()
     setup_logging(args.log)
+    
+    # Configure and run the engine
+    engine.dashboard_enabled = args.dashboard
+    engine.dashboard_port = args.port
     
     try:
         engine.run()
     except KeyboardInterrupt:
-        logger.info("Shutting down KnwStack Engine...")
+        logger.info("\nShutting down KnwStack Engine...")
