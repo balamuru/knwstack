@@ -24,9 +24,18 @@ In `decorators.py`, we implemented a `clear()` method. This is critical because 
 
 ---
 
-## 2. The Engine Dataflow (`engine/router.py`)
+## 2. The Engine & Runner Architecture (`engine/router.py`)
 
-The `run_engine` function is where the "Split-Brain" is physically constructed. It follows a **Broadcast & Branch** pattern.
+KnwStack professionalizes its execution environment by decoupling the **Graph Definition** from the **Execution Lifecycle**.
+
+### 2.1 `KnwStackEngine` (The Graph)
+The `KnwStackEngine` class is responsible solely for building the Pathway dataflow graph. It gathers all registered rules from the `api` layer and constructs the Hot, Warm, and Cold path branches. It is a "stateless" definition of your intelligence pipeline.
+
+### 2.2 `KnwStackRunner` (The Lifecycle)
+The `KnwStackRunner` manages how the engine is executed. It handles environment variables, monitoring servers, and UI modes.
+
+*   **Headless Mode**: The default for production. Disables the terminal UI and monitoring servers for maximum performance and silence.
+*   **Dashboard Mode**: Enables a Prometheus-compatible metrics server. In Community Edition, this also applies a "Silence Patch" to suppress the flickering terminal UI while keeping the `/metrics` endpoint active.
 
 ### 2.1 The Ingestion Loop
 We use `pw.io.python.read` combined with our custom `NatsSource`. This is a low-level bridge that runs a polling loop inside a background thread, yielding messages to Pathway. This prevents NATS blocking from affecting the computation speed.

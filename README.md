@@ -66,6 +66,13 @@ cd examples/smart_building
 python app.py --log INFO
 ```
 
+**Optional: Enable Monitoring**
+To enable the background metrics server:
+```bash
+python app.py --dashboard --port 9090
+```
+Then view metrics at: `http://localhost:9090/metrics`
+
 In a second terminal, trigger events with the interactive generator:
 ```bash
 python generator.py
@@ -94,7 +101,7 @@ knwstack/
 ├── src/
 │   └── knwstack/
 │       ├── api/          # Decorators and Registries
-│       ├── engine/       # Core Pathway Routing Engine
+│       ├── engine/       # Core Engine (Graph) & Runner (Lifecycle)
 │       └── connectors/   # NATS JetStream Adapters
 ├── tests/                # Comprehensive Test Suite
 └── examples/             # Reference Implementations

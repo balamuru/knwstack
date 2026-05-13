@@ -90,16 +90,27 @@ def analyze_cause(events):
 
 ---
 
-## 6. Observability & Performance Tuning
+## 6. Observability & Operational Modes
 
-### 6.1 Log Narrative
-KnwStack provides a transparent "narrative" of every event:
-*   `⚡ [INGEST]`: A raw event enters the system.
-*   `   ∟ [HOT]`: Reflex path evaluation.
-*   `🟠 [WARM]`: Tactical path windowed evaluation (CEP).
-*   `🔵 [COLD]`: Strategic path LLM dispatch.
+KnwStack supports two distinct operational modes to balance development visibility with production performance.
 
-### 6.2 Tuning Verbosity
+### 6.1 Headless Mode (Production)
+By default, the `KnwStackRunner` executes in **Headless Mode**. This is a silent, high-performance mode suitable for background services and containerized deployments. No web server or terminal UI is launched.
+
+### 6.2 Dashboard Mode (Development/Observability)
+When launched with `--dashboard`, KnwStack activates its monitoring layer. 
+
+> [!NOTE]
+> In the Community Edition, Dashboard Mode provides a **Prometheus Metrics Server** and a clean, silent terminal. The visual interactive graph is an enterprise-only feature.
+
+*   **Endpoint**: `http://localhost:9090/metrics`
+*   **Log Narrative**: Even with terminal UI suppressed, KnwStack provides a transparent "narrative" of every event in your standard logs:
+    *   `⚡ [INGEST]`: A raw event enters the system.
+    *   `   ∟ [HOT]`: Reflex path evaluation.
+    *   `🟠 [WARM]`: Tactical path windowed evaluation (CEP).
+    *   `🔵 [COLD]`: Strategic path LLM dispatch.
+
+### 6.3 Tuning Verbosity
 Run your app with `--log DEBUG` to see the full dataflow state, or `INFO` for the high-level narrative.
 
 ---

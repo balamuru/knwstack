@@ -1,7 +1,7 @@
 import logging
 import argparse
 from knwstack.api.decorators import reflex_rule, tactical_model, strategic_prompt
-from knwstack.engine.router import build_engine
+from knwstack.engine.router import KnwStackEngine, KnwStackRunner
 
 def setup_logging(level_name):
     level = getattr(logging, level_name.upper(), logging.INFO)
@@ -97,7 +97,7 @@ def fire_analysis_strategic(events):
 
 # Engine Initialization
 # ==========================================
-engine = build_engine(
+engine = KnwStackEngine(
     nats_url="nats://localhost:4222", 
     inputs=[">"],
     output_subject="campus.actions"
@@ -134,18 +134,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--port", 
         type=int, 
-        default=8080, 
-        help="Port for the Monitoring Dashboard (default: 8080)"
+        default=9090, 
+        help="Port for the Monitoring Dashboard (default: 9090)"
     )
     
     args = parser.parse_args()
     setup_logging(args.log)
     
-    # Configure and run the engine
-    engine.dashboard_enabled = args.dashboard
-    engine.dashboard_port = args.port
+    # Configure and run the engine via the Runner
+    runner = KnwStackRunner(engine)
     
     try:
-        engine.run()
+        runner.run(dashboard=args.dashboard, port=args.port)
     except KeyboardInterrupt:
         logger.info("\nShutting down KnwStack Engine...")
