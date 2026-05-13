@@ -2,147 +2,171 @@ import asyncio
 import json
 import random
 import argparse
-import sys
+import curses
+import time
 from nats.aio.client import Client as NATS
 
-async def dispatch_telemetry(nc):
-    print("🟢 Dispatching: TELEMETRY (Nominal Stream)")
-    for _ in range(5):
-        payload = {
-            "temperature": random.uniform(21.0, 23.0),
-            "power_draw_kw": random.uniform(2.0, 3.5),
-            "humidity": 45.0,
-            "key": "bldg1",
-            "timestamp": int(__import__('time').time() * 1000)
-        }
-        await nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
-        await asyncio.sleep(0.1)
-    await nc.publish("heartbeat", b"{}")
+class GeneratorTUI:
+    def __init__(self, nc):
+        self.nc = nc
+        self.logs = []
+        self.running = True
+        self.selected_index = 0
+        self.log_offset = 0
+        self.options = [
+            ("🟢 Nominal Telemetry", self.dispatch_telemetry, "Expected: SILENT (18-28°C)"),
+            ("🔴 Fire Alarm       ", self.dispatch_fire_alarm, "Expected: REFLEX ACTION"),
+            ("🟠 High Temp        ", self.dispatch_high_temp, "Expected: TACTICAL ALERT"),
+            ("🔵 Anomaly          ", self.dispatch_anomaly, "Expected: STRATEGIC AI"),
+            ("🏢 Campus Simulation", self.dispatch_campus_simulation, "Expected: NORMAL/HOT/COLD"),
+        ]
 
-async def dispatch_high_temp(nc):
-    print("🟠 Dispatching: HIGH_TEMP (Tactical Path)")
-    for _ in range(5):
-        payload = {
-            "temperature": random.uniform(29.0, 31.0),
-            "power_draw_kw": random.uniform(4.0, 5.5),
-            "humidity": 45.0,
-            "key": "bldg1",
-            "timestamp": int(__import__('time').time() * 1000)
-        }
-        await nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
-        await asyncio.sleep(0.1)
-    await nc.publish("heartbeat", b"{}")
+    def add_log(self, msg):
+        self.logs.append(f"[{time.strftime('%H:%M:%S')}] {msg}")
+        # Auto-scroll to bottom
+        if len(self.logs) > 10:
+            self.log_offset = len(self.logs) - 10
 
-async def dispatch_anomaly(nc):
-    print("🔵 Dispatching: ANOMALY (Strategic Path)")
-    for _ in range(5):
-        payload = {
-            "temperature": random.uniform(18.0, 19.5), # Low temp
-            "power_draw_kw": random.uniform(11.0, 14.0), # High power mismatch
-            "humidity": 45.0,
-            "key": "bldg1",
-            "timestamp": int(__import__('time').time() * 1000)
-        }
-        await nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
-        await asyncio.sleep(0.1)
-    await nc.publish("heartbeat", b"{}")
+    async def dispatch_telemetry(self):
+        self.add_log("🟢 DISPATCH: TELEMETRY (Nominal)")
+        self.add_log("   EXPECTED: SILENT (Temp 21-23°C in 18-28°C range)")
+        for _ in range(5):
+            payload = {
+                "temperature": random.uniform(21.0, 23.0),
+                "power_draw_kw": random.uniform(2.0, 3.5),
+                "key": "bldg1",
+                "timestamp": int(time.time() * 1000)
+            }
+            await self.nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
+            await asyncio.sleep(0.05)
+        await self.nc.publish("heartbeat", b"{}")
+        self.add_log("✅ Nominal dispatch complete.")
 
-async def dispatch_fire_alarm(nc):
-    print("🔴 Dispatching: FIRE_ALARM (Hot Path)")
-    payload = {"type": "fire", "zone": "lobby"}
-    await nc.publish("bldg1.hvac.alarm", json.dumps(payload).encode())
-    await nc.publish("heartbeat", b"{}")
+    async def dispatch_fire_alarm(self):
+        self.add_log("🔴 DISPATCH: FIRE_ALARM (Hot Path)")
+        self.add_log("   EXPECTED: HOT REFLEX (Immediate HVAC Shutdown)")
+        payload = {"type": "fire", "zone": "lobby"}
+        await self.nc.publish("bldg1.hvac.alarm", json.dumps(payload).encode())
+        await self.nc.publish("heartbeat", b"{}")
+        self.add_log("✅ Fire alarm dispatch complete.")
 
-async def dispatch_campus_simulation(nc):
-    print("🏢 Starting CAMPUS SIMULATION (Explicit Key Demo)")
-    print("   - Building Alpha: key='bldg_alpha' (Nominal: 22°C)")
-    print("   - Building Beta:  key='bldg_beta'  (High Temp: 32°C)")
-    print("   📡 Both sending to shared subject: 'campus.telemetry'")
-    
-    # Send Building Alpha (Nominal)
-    for _ in range(5):
-        payload = {
-            "key": "bldg_alpha",
-            "temperature": 22.0, 
-            "power_draw_kw": 2.5, 
-            "timestamp": int(__import__('time').time() * 1000)
-        }
-        await nc.publish("campus.telemetry", json.dumps(payload).encode())
-        await asyncio.sleep(0.1) # Spread events to help windowing
+    async def dispatch_high_temp(self):
+        self.add_log("🟠 DISPATCH: HIGH_TEMP (Tactical Path)")
+        self.add_log("   EXPECTED: TACTICAL ALERT (High Cooling action)")
+        for _ in range(5):
+            payload = {
+                "temperature": random.uniform(29.0, 31.0),
+                "power_draw_kw": random.uniform(4.0, 5.5),
+                "key": "bldg1",
+                "timestamp": int(time.time() * 1000)
+            }
+            await self.nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
+            await asyncio.sleep(0.05)
+        await self.nc.publish("heartbeat", b"{}")
+        self.add_log("✅ High temp dispatch complete.")
+
+    async def dispatch_anomaly(self):
+        self.add_log("🔵 DISPATCH: ANOMALY (Strategic Path)")
+        self.add_log("   EXPECTED: STRATEGIC AI (Concise LLM Diagnosis)")
+        for _ in range(5):
+            payload = {
+                "temperature": random.uniform(18.0, 19.5),
+                "power_draw_kw": random.uniform(11.0, 14.0),
+                "key": "bldg1",
+                "timestamp": int(time.time() * 1000)
+            }
+            await self.nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
+            await asyncio.sleep(0.05)
+        await self.nc.publish("heartbeat", b"{}")
+        self.add_log("✅ Anomaly dispatch complete.")
+
+    async def dispatch_campus_simulation(self):
+        self.add_log("🏢 DISPATCH: CAMPUS SIMULATION (3-Way)")
+        self.add_log("   EXPECTED: Alpha (SILENT), Beta (COOLING), Gamma (HEATING)")
+        buildings = [
+            ("bldg_alpha", 22.0, 2.5),
+            ("bldg_beta", 32.0, 5.5),
+            ("bldg_gamma", 15.0, 3.5)
+        ]
+        for b_id, t, p in buildings:
+            for _ in range(3):
+                payload = {
+                    "key": b_id, "temperature": t, "power_draw_kw": p, 
+                    "timestamp": int(time.time() * 1000)
+                }
+                await self.nc.publish("campus.telemetry", json.dumps(payload).encode())
+                await asyncio.sleep(0.05)
+        await self.nc.publish("heartbeat", b"{}")
+        self.add_log("✅ Campus simulation complete.")
+
+    def draw_screen(self, stdscr):
+        stdscr.clear()
+        h, w = stdscr.getmaxyx()
+
+        # Header
+        title = " KnwStack Smart Building Event Generator "
+        stdscr.addstr(1, (w - len(title)) // 2, title, curses.A_REVERSE)
+
+        # Menu
+        menu_y = 4
+        stdscr.addstr(menu_y, 4, "Navigate with Arrows, Press Enter to Dispatch:", curses.A_BOLD)
         
-    # Send Building Beta (Hot)
-    for _ in range(5):
-        payload = {
-            "key": "bldg_beta",
-            "temperature": 32.0, 
-            "power_draw_kw": 5.5, 
-            "timestamp": int(__import__('time').time() * 1000)
-        }
-        await nc.publish("campus.telemetry", json.dumps(payload).encode())
-        await asyncio.sleep(0.1)
-        
-    # Final Heartbeat to advance watermark
-    await nc.publish("heartbeat", b"{}")
-    
-    print("✅ Campus dispatch complete. Observe how the engine isolates 'bldg_beta' alerts despite the shared subject.")
-
-async def run_interactive(nc):
-    while True:
-        print("\n" + "="*45)
-        print("    KnwStack Smart Building Event Generator")
-        print("="*45)
-        print("  1. 🟢 Nominal Telemetry (Reliable)")
-        print("  2. 🔴 Fire Alarm        (Hot Reflex)")
-        print("  3. 🟠 High Temp         (Warm Tactical)")
-        print("  4. 🔵 Anomaly           (Cold Strategic)")
-        print("  5. 🏢 Campus Simulation (Multi-Building)")
-        print("  6. ❌ Exit")
-        print("="*45)
-        
-        try:
-            choice = await asyncio.get_event_loop().run_in_executor(None, input, "Select option: ")
-            if choice == "1":
-                await dispatch_telemetry(nc)
-            elif choice == "2":
-                await dispatch_fire_alarm(nc)
-            elif choice == "3":
-                await dispatch_high_temp(nc)
-            elif choice == "4":
-                await dispatch_anomaly(nc)
-            elif choice == "5":
-                await dispatch_campus_simulation(nc)
-            elif choice == "6" or choice.lower() == 'q':
-                break
+        for i, (label, _, expected) in enumerate(self.options):
+            if i == self.selected_index:
+                attr = curses.A_REVERSE | curses.color_pair(i + 1)
+                stdscr.addstr(menu_y + 2 + i, 6, f" > {label} ", attr)
+                stdscr.addstr(f"   ({expected})", curses.color_pair(6))
             else:
-                print("⚠️ Invalid choice.")
+                stdscr.addstr(menu_y + 2 + i, 6, f"   {label} ", curses.color_pair(i + 1))
+
+        # Logs
+        log_start_y = h - 13
+        stdscr.addstr(log_start_y, 4, "Recent Activity (PgUp/PgDn to scroll):", curses.A_UNDERLINE)
+        
+        visible_logs = self.logs[self.log_offset : self.log_offset + 10]
+        for i, log in enumerate(visible_logs):
+            stdscr.addstr(log_start_y + 2 + i, 6, log[:w-10])
+
+        # Footer
+        footer = f" NATS: Connected | Log: {len(self.logs)} events | 'Q' to Quit "
+        stdscr.addstr(h - 2, (w - len(footer)) // 2, footer, curses.color_pair(1))
+        
+        stdscr.refresh()
+
+    async def run(self, stdscr):
+        curses.start_color()
+        curses.init_pair(1, curses.COLOR_GREEN, curses.COLOR_BLACK)
+        curses.init_pair(2, curses.COLOR_RED, curses.COLOR_BLACK)
+        curses.init_pair(3, curses.COLOR_YELLOW, curses.COLOR_BLACK) 
+        curses.init_pair(4, curses.COLOR_CYAN, curses.COLOR_BLACK) 
+        curses.init_pair(5, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
+        curses.init_pair(6, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        
+        stdscr.nodelay(True)
+        stdscr.keypad(True)
+        curses.curs_set(0)
+
+        while self.running:
+            self.draw_screen(stdscr)
             
-            print("✅ Dispatch complete.")
-        except EOFError:
-            break
-        except Exception as e:
-            print(f"❌ Error: {e}")
+            key = stdscr.getch()
+            if key == curses.KEY_UP:
+                self.selected_index = (self.selected_index - 1) % len(self.options)
+            elif key == curses.KEY_DOWN:
+                self.selected_index = (self.selected_index + 1) % len(self.options)
+            elif key in [10, 13, curses.KEY_ENTER]:
+                func = self.options[self.selected_index][1]
+                await func()
+            elif key == curses.KEY_PPAGE: # Page Up
+                self.log_offset = max(0, self.log_offset - 5)
+            elif key == curses.KEY_NPAGE: # Page Down
+                self.log_offset = min(max(0, len(self.logs) - 10), self.log_offset + 5)
+            elif key in [ord('q'), ord('Q')]:
+                self.running = False
+            
+            await asyncio.sleep(0.02)
 
 async def main():
-    parser = argparse.ArgumentParser(
-        description='KnwStack Smart Building Telemetry Generator',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Interactive Mode (Default):
-  Run without arguments to open the color-coded menu.
-  This is the recommended way to test multiple scenarios sequentially.
-
-Single-Shot Modes:
-  telemetry   -> Nominal data stream.
-  fire_alarm  -> Triggers HOT PATH (Immediate Reflex).
-  high_temp   -> Triggers WARM PATH (Tactical CEP).
-  anomaly     -> Triggers COLD PATH (Strategic AI).
-"""
-    )
-    parser.add_argument('--mode', 
-                        choices=['telemetry', 'high_temp', 'anomaly', 'fire_alarm', 'campus_sim'], 
-                        help="Single-shot mode. If omitted, starts interactive menu.")
-    args = parser.parse_args()
-
     nc = NATS()
     try:
         await nc.connect("nats://localhost:4222")
@@ -150,25 +174,25 @@ Single-Shot Modes:
         print(f"❌ Failed to connect to NATS: {e}")
         return
 
-    if args.mode:
-        if args.mode == "telemetry":
-            await dispatch_telemetry(nc)
-        elif args.mode == "high_temp":
-            await dispatch_high_temp(nc)
-        elif args.mode == "anomaly":
-            await dispatch_anomaly(nc)
-        elif args.mode == "fire_alarm":
-            await dispatch_fire_alarm(nc)
-        elif args.mode == "campus_sim":
-            await dispatch_campus_simulation(nc)
-        print("✅ Dispatch complete.")
-    else:
-        await run_interactive(nc)
-
-    await nc.drain()
+    tui = GeneratorTUI(nc)
+    stdscr = curses.initscr()
+    curses.noecho()
+    curses.cbreak()
+    stdscr.keypad(True)
+    
+    try:
+        await tui.run(stdscr)
+    finally:
+        curses.nocbreak()
+        stdscr.keypad(False)
+        curses.echo()
+        curses.endwin()
+        await nc.drain()
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n👋 Exiting generator...")
+        pass
+    except Exception as e:
+        print(f"❌ Terminal Error: {e}")

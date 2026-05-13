@@ -42,6 +42,9 @@ def temperature_tactical(events):
         if avg_temp > 28.0:
             logger.warning(f"⚠️ [WARM] High average temperature detected in {building} ({avg_temp:.1f}°C) over {len(temps)} samples. Increasing cooling.")
             return {"action": "set_cooling", "value": "high", "avg_temp": avg_temp, "building": building}
+        elif avg_temp < 18.0:
+            logger.warning(f"⚠️ [WARM] Low average temperature detected in {building} ({avg_temp:.1f}°C) over {len(temps)} samples. Increasing heating.")
+            return {"action": "set_heating", "value": "high", "avg_temp": avg_temp, "building": building}
             
     return None
 

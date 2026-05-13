@@ -64,27 +64,28 @@ Building a KnwStack application is handled entirely through simple Python decora
 ### 5.1 @reflex_rule
 For the **Hot Path**. Must be deterministic and execute in <10ms.
 ```python
-@reflex_rule("telemetry.>")
-def emergency_stop(event):
-    if event["type"] == "alarm":
-        return {"action": "shutdown"}
+@reflex_rule("bldg1.hvac.>") # Hierarchical wildcard
+def emergency_stop(events):
+    for topic, data in events:
+        if data.get("type") == "fire":
+            return {"action": "shutdown"}
 ```
 
 ### 5.2 @tactical_model
 For the **Warm Path**. The engine for **CEP and Windowing**.
 ```python
-@tactical_model("telemetry.>", window_type="sliding", length_s=5, slide_s=1)
+@tactical_model(">.telemetry", window_type="sliding", length_s=5)
 def detect_trend(events):
-    # 'events' is a windowed list of data points
+    # 'events' is grouped by 'key' automatically
     pass
 ```
 
 ### 5.3 @strategic_prompt
 For the **Cold Path**. Dispatches asynchronous LLM requests.
 ```python
-@strategic_prompt("telemetry.>", cooldown_s=60)
+@strategic_prompt(">.telemetry", cooldown_s=60)
 def analyze_cause(events):
-    return {"model": "gpt-4", "messages": [...]}
+    return {"model": "gpt-4o-mini", "messages": [...]}
 ```
 
 ---
@@ -131,6 +132,11 @@ WARNING     ∟ [WARM] Outcome: ACTION TRIGGERED -> {'action': 'set_cooling', 'v
 2.  **`⚠️ High average...`**: This is your **custom business logic** executing. It only fires when the condition (Average > 30°C) is met across the *entire* window.
 3.  **`∟ [WARM] Outcome: ACTION TRIGGERED`**: The KnwStack router has validated your rule's return value and is now dispatching the action (e.g., to NATS or a physical actuator).
 4.  **`🔵 [COLD] Evaluating...`**: Note that this often appears alongside the Warm path. This is the **Split-Brain** in action—one side is handling the reflex/tactical response, while the other is preparing a deep-reasoning prompt.
+
+### 7.4 Temporal Synchronization (Heartbeats)
+In high-throughput systems, the windowing clock moves naturally. However, in sparse or intermittent streams (like building sensors), windows can "stall" because no new events are arriving to push the watermark forward. 
+
+**Best Practice**: Always inject a periodic `heartbeat` event into your stream (e.g., every 1s). The KnwStack engine uses these heartbeats to advance the global clock and ensure that tactical windows close reliably even when sensors are quiet.
 
 ---
 
@@ -184,3 +190,21 @@ For **Tactical (Warm)** and **Strategic (Cold)** paths that rely on windowed sta
 ### 9.3 Scaling Strategy
 *   **Stateless Scaling**: The **Hot Path** (Reflexes) scales linearly with the number of pods.
 *   **Stateful Scaling**: The **Warm/Cold Paths** scale by increasing the number of partitions in the NATS Stream, allowing more pods to share the stateful workload.
+
+---
+
+## 10. Multi-Tenant Operations
+
+KnwStack is built from the ground up for massive multi-tenancy. Whether you are managing 5 buildings or 5,000, the framework ensures strict isolation.
+
+### 10.1 Key-Based Partitioning
+Every event ingested by KnwStack is assigned a `key`. This key is the "Owner ID" of the event (e.g., a Building ID, Account ID, or Device ID). 
+
+*   **Explicit Keys**: If your JSON payload includes a `"key"` field, KnwStack uses it.
+*   **Implicit Keys**: If the payload is missing a key, KnwStack automatically falls back to the first segment of the NATS subject (e.g., in `bldg1.hvac.telemetry`, the key is `bldg1`).
+
+### 10.2 Independent Windows
+By grouping dataflows by `key`, KnwStack ensures that:
+-   **No Cross-Talk**: Building A's high-temp events never contribute to Building B's tactical averages.
+-   **Isolation**: Building B can be under an "Anomaly" analysis without affecting the latency or processing state of Building A.
+-   **Resource Efficiency**: The engine only maintains window state for *active* tenants.

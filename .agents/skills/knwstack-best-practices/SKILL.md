@@ -29,8 +29,10 @@ Pathway expects a pull-based (polled) data source. To support NATS:
 
 ## 4. Framework Implementation "Gotchas" (Critical)
 - **Synchronous Computation**: Pathway's `pw.apply` and `reduce` operations are synchronous. LLM calls in the Strategic path MUST be made using the synchronous `litellm.completion` or a properly managed async bridge to prevent blocking the entire engine.
-- **Subject Matching**: In the Reflex path, use the internal `match_subject` helper to support NATS wildcards (`*` and `>`). Do not use exact string equality for subjects.
-- **Test Isolation**: Always use `RuleRegistry.clear()` between test runs to prevent rules from leaking across unit tests. Use the autouse fixture in `conftest.py`.
+- **Subject Matching**: Use hierarchical wildcards (`>`) in decorators to support multi-level subjects (e.g., `bldg1.hvac.telemetry`). The engine MUST subscribe to `>` in the NATS connector to ensure all relevant traffic is captured.
+- **Multi-Tenant Isolation**: Always use a `key` field in telemetry data. Use the `groupby("key")` pattern in Pathway windows to ensure independent processing per tenant/building. If a `key` is missing, fallback to the first segment of the NATS subject.
+- **Temporal Synchronization (Heartbeats)**: In low-traffic or intermittent streams, windows may stall. Always inject a periodic `heartbeat` event into the stream to force Pathway's watermark forward and ensure windows close reliably.
+- **Schema Flexibility**: Extraction UDFs (like `get_time` or `get_key`) MUST handle both Python `dict` and Pathway's `Json` wrapper types to remain resilient against heterogeneous input formats.
 
 ## 5. Developer API Abstractions
 Developers write logic using simple decorators that register metadata for the Pathway engine:
