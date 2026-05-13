@@ -28,20 +28,19 @@ def test_run_tactical_logic():
     
     cfg = {"func": mock_model}
     events = [
-        {"temp": 10},
-        {"temp": 20}
+        ("temp", {"temp": 10, "key": "test"}),
+        ("temp", {"temp": 20, "key": "test"})
     ]
     
     result = run_tactical(events, "temp", cfg, "output")
     assert result["data"]["avg"] == 15
 
-@pytest.mark.asyncio
-async def test_run_strategic_logic_no_anomaly():
+def test_run_strategic_logic_no_anomaly():
     def mock_prompt(events):
         return None # No anomaly
     
     cfg = {"func": mock_prompt}
-    events = [("temp", {"temp": 10})]
+    events = [("temp", {"temp": 10, "key": "test"})]
     
-    result = await run_strategic(events, "temp", cfg, "output")
+    result = run_strategic(events, "temp", cfg, "output")
     assert result == {}

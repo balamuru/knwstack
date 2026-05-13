@@ -43,7 +43,6 @@ def _match_subject_logic(pattern: str, subject: str) -> bool:
     # Match full string
     return bool(re.fullmatch(regex_pattern, subject))
 
-@pw.udf
 def match_subject(pattern: str, subject: str) -> bool:
     """Pathway UDF wrapper for subject matching."""
     return _match_subject_logic(pattern, subject)
@@ -78,7 +77,6 @@ def apply_reflex(subject: str, data: dict, reflex_rules: List[dict], output_subj
         
     return {}
 
-@pw.udf
 def get_key(data, subject: str) -> str:
     """Strictly extracts a string key from the 'key' field. No subject fallbacks."""
     val = None
@@ -118,16 +116,9 @@ def run_tactical(events_list: list, topic: str, model_cfg: dict, output_subject:
             except: pass
         py_events.append((s, d))
 
-    # DEBUG: See what's inside the window
-    for s, d in py_events:
-        logger.info(f"      ∟ DEBUG: [In Window] key={d.get('key')} subject={s}")
-    
-    # Identify the partition key for logging
-    partition_key = "unknown"
-    if py_events:
-        _, first_data = py_events[0]
-        partition_key = first_data.get("key", topic.split('.')[0])
-    
+    # Determine partition key from the first event if available
+    partition_key = py_events[0][1].get("key", "unknown") if py_events else "unknown"
+
     # SAFETY SIEVE: Hard-filter the window to only events matching this partition.
     # This prevents cross-building leakage even if the engine's groupby fails.
     if partition_key != "unknown":
@@ -245,7 +236,7 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
     for model in registry.tactical_models:
         topic = model["topic"]
         # Now using the @pw.udf version of match_subject
-        model_table = t.filter(match_subject(topic, t.subject))
+        model_table = t.filter(pw.apply(match_subject, topic, t.subject))
         
         if model.get("window_type") == "sliding":
             window = pw.temporal.sliding(duration=model["length_s"] * 1000, hop=model["slide_s"] * 1000)
@@ -278,7 +269,7 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
     for prompt_cfg in registry.strategic_prompts:
         topic = prompt_cfg["topic"]
         # Now using the @pw.udf version
-        prompt_table = t.filter(match_subject(topic, t.subject))
+        prompt_table = t.filter(pw.apply(match_subject, topic, t.subject))
         
         if prompt_cfg.get("window_type") == "sliding":
             window = pw.temporal.sliding(duration=prompt_cfg["length_s"] * 1000, hop=prompt_cfg["slide_s"] * 1000)
