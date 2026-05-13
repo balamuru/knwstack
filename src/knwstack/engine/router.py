@@ -12,6 +12,7 @@ from knwstack.connectors.nats_connector import NatsSource
 logger = logging.getLogger(__name__)
 # Stateful tracking for cooldowns: {(model_name, key): last_execution_time}
 _last_tactical_run = {}
+_last_strategic_run = {}
 
 class InputSchema(pw.Schema):
     subject: str
@@ -276,14 +277,26 @@ def run_strategic(events_list: list, topic: str, prompt_cfg: dict, output_subjec
         py_events.append((s, d))
     
     partition_key = py_events[0][1].get("key", "unknown") if py_events else "unknown"
+    
+    now = time.time()
+    cooldown = prompt_cfg.get("cooldown_s", 0)
+    cooldown_key = (prompt_cfg["func"].__name__, partition_key)
+    
+    if cooldown > 0:
+        last_run = _last_strategic_run.get(cooldown_key, 0)
+        if now - last_run < cooldown: return {}
+
     logger.info(f"🔵 [COLD] Evaluating Strategic Prompt for {partition_key}")
     messages = prompt_cfg["func"](py_events)
     if not messages: return {}
+    
+    if cooldown > 0: _last_strategic_run[cooldown_key] = now
     
     from litellm import completion
     try:
         res = completion(model=messages.get("model", "gpt-4o-mini"), messages=messages["messages"])
         content = res.choices[0].message.content
+        logger.info(f"✨ [COLD] Strategic AI Diagnosis for {partition_key}: {content}")
         return {"subject": f"{output_subject}.strategic", "data": {"reasoning": content, "key": partition_key}}
     except Exception as e:
         logger.error(f"❌ [COLD] Strategic LLM Error: {e}")
