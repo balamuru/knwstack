@@ -11,10 +11,13 @@ async def dispatch_telemetry(nc):
         payload = {
             "temperature": random.uniform(21.0, 23.0),
             "power_draw_kw": random.uniform(2.0, 3.5),
-            "humidity": 45.0
+            "humidity": 45.0,
+            "key": "bldg1",
+            "timestamp": int(__import__('time').time() * 1000)
         }
         await nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
         await asyncio.sleep(0.1)
+    await nc.publish("heartbeat", b"{}")
 
 async def dispatch_high_temp(nc):
     print("🟠 Dispatching: HIGH_TEMP (Tactical Path)")
@@ -22,10 +25,13 @@ async def dispatch_high_temp(nc):
         payload = {
             "temperature": random.uniform(29.0, 31.0),
             "power_draw_kw": random.uniform(4.0, 5.5),
-            "humidity": 45.0
+            "humidity": 45.0,
+            "key": "bldg1",
+            "timestamp": int(__import__('time').time() * 1000)
         }
         await nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
         await asyncio.sleep(0.1)
+    await nc.publish("heartbeat", b"{}")
 
 async def dispatch_anomaly(nc):
     print("🔵 Dispatching: ANOMALY (Strategic Path)")
@@ -33,15 +39,52 @@ async def dispatch_anomaly(nc):
         payload = {
             "temperature": random.uniform(18.0, 19.5), # Low temp
             "power_draw_kw": random.uniform(11.0, 14.0), # High power mismatch
-            "humidity": 45.0
+            "humidity": 45.0,
+            "key": "bldg1",
+            "timestamp": int(__import__('time').time() * 1000)
         }
         await nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
         await asyncio.sleep(0.1)
+    await nc.publish("heartbeat", b"{}")
 
 async def dispatch_fire_alarm(nc):
     print("🔴 Dispatching: FIRE_ALARM (Hot Path)")
     payload = {"type": "fire", "zone": "lobby"}
     await nc.publish("bldg1.hvac.alarm", json.dumps(payload).encode())
+    await nc.publish("heartbeat", b"{}")
+
+async def dispatch_campus_simulation(nc):
+    print("🏢 Starting CAMPUS SIMULATION (Explicit Key Demo)")
+    print("   - Building Alpha: key='bldg_alpha' (Nominal: 22°C)")
+    print("   - Building Beta:  key='bldg_beta'  (High Temp: 32°C)")
+    print("   📡 Both sending to shared subject: 'campus.telemetry'")
+    
+    # Send Building Alpha (Nominal)
+    for _ in range(5):
+        payload = {
+            "key": "bldg_alpha",
+            "temperature": 22.0, 
+            "power_draw_kw": 2.5, 
+            "timestamp": int(__import__('time').time() * 1000)
+        }
+        await nc.publish("campus.telemetry", json.dumps(payload).encode())
+        await asyncio.sleep(0.1) # Spread events to help windowing
+        
+    # Send Building Beta (Hot)
+    for _ in range(5):
+        payload = {
+            "key": "bldg_beta",
+            "temperature": 32.0, 
+            "power_draw_kw": 5.5, 
+            "timestamp": int(__import__('time').time() * 1000)
+        }
+        await nc.publish("campus.telemetry", json.dumps(payload).encode())
+        await asyncio.sleep(0.1)
+        
+    # Final Heartbeat to advance watermark
+    await nc.publish("heartbeat", b"{}")
+    
+    print("✅ Campus dispatch complete. Observe how the engine isolates 'bldg_beta' alerts despite the shared subject.")
 
 async def run_interactive(nc):
     while True:
@@ -52,7 +95,8 @@ async def run_interactive(nc):
         print("  2. 🔴 Fire Alarm        (Hot Reflex)")
         print("  3. 🟠 High Temp         (Warm Tactical)")
         print("  4. 🔵 Anomaly           (Cold Strategic)")
-        print("  5. ❌ Exit")
+        print("  5. 🏢 Campus Simulation (Multi-Building)")
+        print("  6. ❌ Exit")
         print("="*45)
         
         try:
@@ -65,7 +109,9 @@ async def run_interactive(nc):
                 await dispatch_high_temp(nc)
             elif choice == "4":
                 await dispatch_anomaly(nc)
-            elif choice == "5" or choice.lower() == 'q':
+            elif choice == "5":
+                await dispatch_campus_simulation(nc)
+            elif choice == "6" or choice.lower() == 'q':
                 break
             else:
                 print("⚠️ Invalid choice.")
@@ -93,7 +139,7 @@ Single-Shot Modes:
 """
     )
     parser.add_argument('--mode', 
-                        choices=['telemetry', 'high_temp', 'anomaly', 'fire_alarm'], 
+                        choices=['telemetry', 'high_temp', 'anomaly', 'fire_alarm', 'campus_sim'], 
                         help="Single-shot mode. If omitted, starts interactive menu.")
     args = parser.parse_args()
 
@@ -113,6 +159,8 @@ Single-Shot Modes:
             await dispatch_anomaly(nc)
         elif args.mode == "fire_alarm":
             await dispatch_fire_alarm(nc)
+        elif args.mode == "campus_sim":
+            await dispatch_campus_simulation(nc)
         print("✅ Dispatch complete.")
     else:
         await run_interactive(nc)

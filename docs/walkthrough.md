@@ -45,14 +45,28 @@ Implemented in `run_strategic`.
 *   **The Async Paradox**: Pathway is a synchronous incremental engine. If we called an LLM inside the dataflow, the entire engine would freeze.
 *   **The Solution**: We use a **Split-Handshake**. The engine prepares the prompt and emits it to a background `ThreadPoolExecutor`. The engine continues processing while the LLM reasoning happens out-of-band.
 
+### 2.5 CEP Internals: How "Warm" Logic Works
+KnwStack implements CEP via **Incremental Windows**.
+*   **`stream.groupby()`**: Before windowing, the engine groups events by a key (e.g., `building_id`). This ensures that multiple entities can be processed in parallel while keeping their states isolated.
+*   **Incremental Reducers**: Pathway doesn't re-calculate the window from scratch when a new event arrives. It uses an incremental state update (adding the new value and dropping the expired one). This allows KnwStack to perform CEP on thousands of concurrent windows with sub-millisecond overhead.
+*   **The Trigger**: The `@tactical_model` receives a "Table" of the current window. If your logic returns a dictionary, the engine treats it as a "CEP Signal" and routes it back to the NATS action subject.
+
 ---
 
 ## 3. NATS Connector (`connectors/nats.py`)
 
-Our NATS implementation solves the **Pull-to-Stream** problem.
+Our NATS implementation solves the **Push-to-Pull Bridge** problem. Pathway's incremental engine requires a source that can be "pulled" (polled), while NATS offers both Push and Pull modes.
 
-*   **JetStream Pull**: We use a `fetch()` loop that requests small batches of messages from NATS.
-*   **Subject Filtering**: The connector automatically maps NATS hierarchy into a flat data structure that Pathway can ingest as a table with columns like `subject`, `payload`, and `timestamp`.
+### 3.1 JetStream (Native Pull)
+For persistent streams, we use the NATS JetStream **Pull API** (`fetch()`). This allows the Pathway engine to control backpressure—it only requests a batch of messages when it is ready to compute the next incremental update.
+
+### 3.2 Core NATS (Push-to-Pull Bridge)
+Core NATS is inherently Push-based. To integrate this with Pathway, we implemented a **Queue-Based Bridge**:
+1.  **Subscription**: The connector opens a standard NATS Push subscription in a background thread.
+2.  **Buffering**: Incoming "pushed" messages are immediately placed into a thread-safe local queue.
+3.  **Ingestion**: Our `NatsSource` generator then "pulls" from this local queue and yields the data to Pathway.
+
+**This architecture ensures that the high-speed "Hot Path" (Reflexes) can receive Push-based events while maintaining the stable, pull-driven dataflow architecture that Pathway requires.**
 
 ---
 

@@ -1,4 +1,6 @@
 import pathway as pw
+import time
+import re
 import json
 import logging
 from typing import Dict, Union, List
@@ -16,12 +18,32 @@ class InputSchema(pw.Schema):
 class KnwStackEngine:
     """Wrapper to hold the Pathway state and allow engine.run()"""
     def run(self):
-        logger.info("Starting Pathway Rust Engine with standard NATS connectors...")
-        pw.run()
+        """Starts the Pathway engine and begins processing events."""
+        logger.info("🚀 KnwStack Engine started. Monitoring event streams...")
+        pw.run(monitoring_level=pw.MonitoringLevel.NONE)
 
 # ==========================================
 # Logic Helpers (Extracted for Testing)
 # ==========================================
+
+import fnmatch
+
+def _match_subject_logic(pattern: str, subject: str) -> bool:
+    """Internal matching logic using Regex for precise NATS wildcard simulation."""
+    import re
+    # Escape dots for regex
+    regex_pattern = pattern.replace(".", r"\.")
+    # Map NATS wildcards to Regex
+    # * -> [^.]+ (one or more non-dot characters)
+    # > -> .* (anything)
+    regex_pattern = regex_pattern.replace("*", r"[^.]+").replace(">", ".*")
+    # Match full string
+    return bool(re.fullmatch(regex_pattern, subject))
+
+@pw.udf
+def match_subject(pattern: str, subject: str) -> bool:
+    """Pathway UDF wrapper for subject matching."""
+    return _match_subject_logic(pattern, subject)
 
 def apply_reflex(subject: str, data: dict, reflex_rules: List[dict], output_subject: str) -> dict:
     """Core logic for the Hot Path (Reflex)."""
@@ -37,7 +59,8 @@ def apply_reflex(subject: str, data: dict, reflex_rules: List[dict], output_subj
     
     rule_found = False
     for rule in reflex_rules:
-        if rule["topic"] == subject:
+        # Use the plain Python logic here to avoid Pathway Expression errors
+        if _match_subject_logic(rule["topic"], subject):
             rule_found = True
             logger.info(f"   ∟ [HOT] Matching Rule: {rule['func'].__name__}")
             action = rule["func"]([(subject, data)])
@@ -52,18 +75,48 @@ def apply_reflex(subject: str, data: dict, reflex_rules: List[dict], output_subj
         
     return {}
 
+@pw.udf
+def get_time(data) -> int:
+    try:
+        if hasattr(data, "get"):
+            return int(data.get("timestamp", time.time() * 1000))
+        return int(data["timestamp"])
+    except:
+        return int(time.time() * 1000)
+
+@pw.udf
+def get_key(data, subject: str) -> str:
+    val = None
+    try:
+        if hasattr(data, "get"):
+            val = data.get("key")
+        else:
+            val = data["key"]
+    except:
+        pass
+        
+    if val:
+        return str(val)
+    return str(subject.split('.')[0] if subject else "unknown")
+
 def run_tactical(events_list: list, topic: str, model_cfg: dict, output_subject: str) -> dict:
     """Core logic for the Warm Path (Tactical)."""
     if not events_list: return {}
     
     py_events = []
-    for d in events_list:
+    for item in events_list:
+        # Handle both raw data and (subject, data) tuples
+        if isinstance(item, tuple) and len(item) == 2:
+            s, d = item
+        else:
+            s, d = topic, item
+            
         if not isinstance(d, dict):
             try:
                 d = json.loads(str(d))
             except:
                 pass
-        py_events.append((topic, d))
+        py_events.append((s, d))
     
     logger.info(f"🟠 [WARM] Evaluating Tactical Model '{model_cfg['func'].__name__}' for {topic} (Window: {len(py_events)} events)")
     action = model_cfg["func"](py_events)
@@ -74,18 +127,23 @@ def run_tactical(events_list: list, topic: str, model_cfg: dict, output_subject:
     logger.debug("   ∟ [WARM] Outcome: No action taken")
     return {}
 
-async def run_strategic(events_list: list, topic: str, prompt_cfg: dict, output_subject: str) -> dict:
-    """Core logic for the Cold Path (Strategic)."""
+def run_strategic(events_list: list, topic: str, prompt_cfg: dict, output_subject: str) -> dict:
+    """Core logic for the Cold Path (Strategic). Uses synchronous bridge for LLM calls."""
     if not events_list: return {}
     
     py_events = []
-    for d in events_list:
+    for item in events_list:
+        if isinstance(item, tuple) and len(item) == 2:
+            s, d = item
+        else:
+            s, d = topic, item
+            
         if not isinstance(d, dict):
             try:
                 d = json.loads(str(d))
             except:
                 pass
-        py_events.append((topic, d))
+        py_events.append((s, d))
     
     logger.info(f"🔵 [COLD] Evaluating Strategic Prompt '{prompt_cfg['func'].__name__}' for {topic} (Window: {len(py_events)} events)")
     messages = prompt_cfg["func"](py_events)
@@ -93,10 +151,12 @@ async def run_strategic(events_list: list, topic: str, prompt_cfg: dict, output_
         logger.debug("   ∟ [COLD] Outcome: No anomalies detected")
         return {}
     
-    from litellm import acompletion
+    from litellm import completion
+    import asyncio
     try:
         logger.warning(f"   ∟ [COLD] Outcome: DISPATCHING TO LLM -> {messages.get('model', 'gpt-4o-mini')}")
-        res = await acompletion(model=messages.get("model", "gpt-4o-mini"), messages=messages["messages"])
+        # Use synchronous completion as Pathway's apply/reduce are synchronous
+        res = completion(model=messages.get("model", "gpt-4o-mini"), messages=messages["messages"])
         content = res.choices[0].message.content
         logger.info(f"✅ [COLD] Strategic Path: LLM Diagnosis received: {content}")
         return {"subject": f"{output_subject}.strategic", "data": {"reasoning": content, "source_events": len(py_events)}}
@@ -125,8 +185,12 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
         schema=InputSchema
     )
 
-    # 2. TIME & WINDOWING
-    t = t.with_columns(time=t.data["timestamp"].as_int(default=0))
+    # 2. TIME & KEY EXTRACTION
+    # We ensure time is in milliseconds and key is always a valid string using typed UDFs
+    t = t.with_columns(
+        time=get_time(t.data),
+        key=get_key(t.data, t.subject)
+    )
 
     # 2. HOT PATH (Reflex)
     reflex_fn = partial(apply_reflex, reflex_rules=registry.reflex_rules, output_subject=output_subject)
@@ -150,7 +214,8 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
     # 3. WARM PATH (Tactical)
     for model in registry.tactical_models:
         topic = model["topic"]
-        model_table = t.filter(t.subject == topic)
+        # Now using the @pw.udf version of match_subject
+        model_table = t.filter(match_subject(topic, t.subject))
         
         if model.get("window_type") == "sliding":
             window = pw.temporal.sliding(duration=model["length_s"] * 1000, hop=model["slide_s"] * 1000)
@@ -158,8 +223,13 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
             window = pw.temporal.tumbling(duration=model["length_s"] * 1000)
 
         tactical_fn = partial(run_tactical, topic=topic, model_cfg=model, output_subject=output_subject)
-        warm_result = model_table.windowby(model_table.time, window=window).reduce(
-            result=pw.apply(tactical_fn, pw.reducers.tuple(pw.this.data))
+        
+        # KEY FIX: Pack subject and data into a tuple column for reduction
+        model_table = model_table.with_columns(
+            event_tuple=pw.apply(lambda s, d: (s, d), model_table.subject, model_table.data)
+        )
+        warm_result = model_table.groupby(model_table.key).windowby(model_table.time, window=window).reduce(
+            result=pw.apply(tactical_fn, pw.reducers.tuple(pw.this.event_tuple))
         )
         warm_result = warm_result.filter(pw.apply(is_valid, warm_result.result))
         
@@ -176,7 +246,8 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
     # 4. COLD PATH (Strategic)
     for prompt_cfg in registry.strategic_prompts:
         topic = prompt_cfg["topic"]
-        prompt_table = t.filter(t.subject == topic)
+        # Now using the @pw.udf version
+        prompt_table = t.filter(match_subject(topic, t.subject))
         
         if prompt_cfg.get("window_type") == "sliding":
             window = pw.temporal.sliding(duration=prompt_cfg["length_s"] * 1000, hop=prompt_cfg["slide_s"] * 1000)
@@ -184,10 +255,15 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
             window = pw.temporal.tumbling(duration=prompt_cfg["length_s"] * 1000)
 
         strategic_fn = partial(run_strategic, topic=topic, prompt_cfg=prompt_cfg, output_subject=output_subject)
-        cold_result = prompt_table.windowby(prompt_table.time, window=window).reduce(
-            result=pw.apply(strategic_fn, pw.reducers.tuple(pw.this.data))
+        
+        # KEY FIX: Pack subject and data into a tuple column for AI analysis
+        model_table = model_table.with_columns(
+            event_tuple=pw.apply(lambda s, d: (s, d), model_table.subject, model_table.data)
         )
-        cold_result = cold_result.filter(pw.apply(is_valid, cold_result.result))
+        strategic_result = model_table.groupby(model_table.key).windowby(model_table.time, window=window).reduce(
+            result=pw.apply(strategic_fn, pw.reducers.tuple(pw.this.event_tuple))
+        )
+        cold_result = strategic_result.filter(pw.apply(is_valid, strategic_result.result))
         
         pw.io.nats.write(
             cold_result.select(

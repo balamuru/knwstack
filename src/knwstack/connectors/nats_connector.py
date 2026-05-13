@@ -35,7 +35,8 @@ class NatsSource(ConnectorSubject):
 
             for sub in self.subjects:
                 if self.jetstream:
-                    # For simplicity in this reference architecture, we use push consumers
+                    # IMPLEMENTATION NOTE: In this reference architecture, we use Push-to-Pull bridging.
+                    # We subscribe (Push) and then bridge into Pathway's next() (Pull) interface.
                     await js.subscribe(sub, cb=cb)
                 else:
                     await nc.subscribe(sub, cb=cb)

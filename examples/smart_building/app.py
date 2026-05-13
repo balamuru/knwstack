@@ -14,74 +14,78 @@ logger = logging.getLogger(__name__)
 # ==========================================
 # HOT PATH: Reflex Rules (< 10ms)
 # ==========================================
-@reflex_rule("bldg1.hvac.alarm")
+@reflex_rule(">.alarm")
 def fire_alarm_reflex(events):
-    """Instantly shuts off HVAC if a fire alarm is detected to prevent smoke spread."""
+    """Instantly shuts off HVAC if a fire alarm is detected."""
     for topic, data in events:
-        if topic == "bldg1.hvac.alarm":
-            if data.get("type") == "fire":
-                logger.error("🚨 FIRE ALARM DETECTED! Executing reflex action: SHUTDOWN HVAC")
-                return {"action": "shutdown", "reason": "fire_alarm", "building": "bldg1"}
+        building = topic.split(".")[0]
+        if data.get("type") == "fire":
+            logger.error(f"🚨 FIRE ALARM DETECTED in {building}! Executing reflex action: SHUTDOWN HVAC")
+            return {"action": "shutdown", "reason": "fire_alarm", "building": building}
     return None
 
 # ==========================================
 # WARM PATH: Tactical Models (< 100ms)
 # ==========================================
-@tactical_model("bldg1.hvac.telemetry", window_type="sliding", length_s=5, slide_s=1)
+@tactical_model(">.telemetry", window_type="sliding", length_s=5, slide_s=1)
 def temperature_tactical(events):
     """Calculates rolling averages over a 5-second sliding window."""
     temps = []
+    building = "unknown"
     for topic, data in events:
-        if topic == "bldg1.hvac.telemetry":
-            temps.append(data.get("temperature", 22.0))
-            
+        if "temperature" not in data: continue
+        building = data.get("key", topic.split(".")[0])
+        temps.append(data.get("temperature", 22.0))
+        
     if len(temps) > 0:
         avg_temp = sum(temps) / len(temps)
         if avg_temp > 28.0:
-            logger.warning(f"⚠️ High average temperature detected ({avg_temp:.1f}°C). Increasing cooling.")
-            return {"action": "set_cooling", "value": "high", "avg_temp": avg_temp, "building": "bldg1"}
+            logger.warning(f"⚠️ [WARM] High average temperature detected in {building} ({avg_temp:.1f}°C) over {len(temps)} samples. Increasing cooling.")
+            return {"action": "set_cooling", "value": "high", "avg_temp": avg_temp, "building": building}
             
     return None
 
 # ==========================================
 # COLD PATH: Strategic Prompts (Seconds)
 # ==========================================
-@strategic_prompt("bldg1.hvac.telemetry", cooldown_s=60, window_type="tumbling", length_s=10)
+@strategic_prompt(">.telemetry", cooldown_s=60, window_type="tumbling", length_s=10)
 def anomaly_strategic(events):
-    """Uses an LLM to analyze complex anomalies (e.g., high power draw despite low temp)."""
-    messages = []
+    """Uses an LLM to analyze complex anomalies."""
     anomalies = []
+    building = "unknown"
     
     for topic, data in events:
-        if topic == "bldg1.hvac.telemetry":
-            if data.get("power_draw_kw", 0) > 10.0 and data.get("temperature", 100) < 20.0:
-                anomalies.append(data)
+        if "power_draw_kw" not in data: continue
+        building = data.get("key", topic.split(".")[0])
+        if data.get("power_draw_kw", 0) > 10.0 and data.get("temperature", 100) < 20.0:
+            anomalies.append(data)
                 
     if not anomalies:
         return None
         
-    logger.info("🧠 Anomalous power/temp correlation detected. Dispatching to LLM for strategic analysis.")
-    messages.append({
+    logger.info(f"🧠 Anomalous power/temp correlation detected in {building}. Dispatching to LLM.")
+    messages = [{
         "role": "user",
-        "content": f"The HVAC system is drawing over 10kW of power, but the room temperature is quite low. Here is the recent telemetry data: {anomalies}. What could cause this mechanical failure? Provide a short 2 sentence diagnosis."
-    })
+        "content": f"The HVAC system in {building} is drawing over 10kW of power, but the room temperature is quite low. Telemetry: {anomalies}. Diagnosis?"
+    }]
     
     return {
         "model": "gpt-4o-mini",
         "messages": messages
     }
 
-@strategic_prompt("bldg1.hvac.alarm", cooldown_s=5)
+@strategic_prompt(">.alarm", cooldown_s=5)
 def fire_analysis_strategic(events):
-    """Uses an LLM to analyze the cause of a fire alarm for post-mortem reporting."""
+    """Uses an LLM to analyze the cause of a fire alarm."""
     for topic, data in events:
-        if topic == "bldg1.hvac.alarm" and data.get("type") == "fire":
-            logger.info("🧠 Fire alarm detected. Dispatching for post-mortem AI analysis.")
+        building = topic.split(".")[0]
+        if data.get("type") == "fire":
+            logger.info(f"🧠 Fire alarm detected in {building}. Dispatching for post-mortem AI analysis.")
             return {
                 "model": "gpt-4o-mini",
                 "messages": [
                     {"role": "system", "content": "You are a smart building safety inspector."},
-                    {"role": "user", "content": f"A fire alarm was just triggered in the {data.get('zone', 'unknown')} zone. The reflex system has already shut down the HVAC. Please provide a brief (1-2 sentence) safety assessment for the maintenance crew."}
+                    {"role": "user", "content": f"A fire alarm was triggered in {building}. The system has shut down the HVAC. Brief assessment?"}
                 ]
             }
     return None
@@ -90,8 +94,8 @@ def fire_analysis_strategic(events):
 # ==========================================
 engine = build_engine(
     nats_url="nats://localhost:4222", 
-    inputs=["bldg1.hvac.alarm", "bldg1.hvac.telemetry"],
-    output_subject="bldg1.actions"
+    inputs=[">"],
+    output_subject="campus.actions"
 )
 
 if __name__ == "__main__":
