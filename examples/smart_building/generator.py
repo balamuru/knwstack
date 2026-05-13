@@ -19,7 +19,8 @@ class GeneratorTUI:
             "latency": "N/A",
             "throughput": 0,
             "memory": "N/A",
-            "total_sent": 0
+            "total_sent": 0,
+            "peak_tp": 0
         }
         self.options = [
             ("🟢 Nominal Telemetry", self.dispatch_telemetry, "Expected: SILENT (18-28°C)"),
@@ -185,17 +186,10 @@ class GeneratorTUI:
         stdscr.addstr(start_y + 1, start_x + 2, "Engine Latency: ")
         stdscr.addstr(f"{lat} ms", color | curses.A_BOLD)
         
-        stdscr.addstr(start_y + 2, start_x + 2, f"Total Events:   {self.metrics['total_sent']:,}")
-        stdscr.addstr(start_y + 3, start_x + 2, f"Throughput:     {self.metrics['throughput']:,} msg/s")
-        stdscr.addstr(start_y + 4, start_x + 2, f"Heap Usage:     {self.metrics['memory']} MB")
-        
-        # Engine Load Visual
-        load_pct = min(100, int(val / 10)) if val > 0 else 0
-        bar_w = box_w - 18
-        filled = int(bar_w * (load_pct / 100))
-        stdscr.addstr(start_y + 6, start_x + 2, "Engine Load: [")
-        stdscr.addstr("█" * filled, curses.color_pair(2) if load_pct > 70 else curses.color_pair(1))
-        stdscr.addstr(" " * (bar_w - filled) + "]")
+        stdscr.addstr(start_y + 2, start_x + 2, f"Total Events:    {self.metrics['total_sent']:,}")
+        stdscr.addstr(start_y + 3, start_x + 2, f"Cur Throughput:  {self.metrics['throughput']:,} msg/s")
+        stdscr.addstr(start_y + 4, start_x + 2, f"Peak Throughput: {self.metrics.get('peak_tp', 0):,} msg/s", curses.color_pair(3))
+        stdscr.addstr(start_y + 5, start_x + 2, f"Heap Usage:      {self.metrics['memory']} MB")
 
     async def poll_metrics(self):
         """Background task to fetch real-time metrics from Pathway."""
@@ -219,19 +213,42 @@ class GeneratorTUI:
                                     if val > max_rows: max_rows = val
                                 except: pass
                         
+                        # self.add_log(f"DEBUG: Max Rows Found: {max_rows}")
+                        
                         # Throughput calculation
                         if last_total > 0:
-                            self.metrics["throughput"] = max_rows - last_total
+                            diff = max_rows - last_total
+                            self.metrics["throughput"] = diff
+                            if diff > self.metrics.get("peak_tp", 0):
+                                self.metrics["peak_tp"] = diff
+                                
                         last_total = max_rows
                         self.metrics["total_sent"] = max(self.metrics["total_sent"], max_rows)
                 
                 # 2. Fetch Process Memory (app.py)
-                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                    if proc.info['cmdline'] and "app.py" in " ".join(proc.info['cmdline']):
-                        self.metrics["memory"] = f"{proc.memory_info().rss / 1024 / 1024:.1f}"
-                        break
+                found_proc = False
+                for proc in psutil.process_iter(['pid', 'cmdline']):
+                    try:
+                        cmd = proc.info.get('cmdline')
+                        if cmd and any("app.py" in arg for arg in cmd):
+                            mem_mb = proc.memory_info().rss / 1024 / 1024
+                            self.metrics["memory"] = f"{mem_mb:.1f}"
+                            found_proc = True
+                            break
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        continue
+                if not found_proc:
+                    self.metrics["memory"] = "N/A"
             except Exception as e:
                 self.metrics["latency"] = "Offline"
+            await asyncio.sleep(1)
+
+    async def background_heartbeat(self):
+        """Periodically sends a heartbeat to advance the engine's clock."""
+        while self.running:
+            try:
+                await self.nc.publish("heartbeat", b"{}")
+            except: pass
             await asyncio.sleep(1)
 
     async def run(self, stdscr):
@@ -249,6 +266,7 @@ class GeneratorTUI:
 
         # Start background tasks
         asyncio.create_task(self.poll_metrics())
+        asyncio.create_task(self.background_heartbeat())
 
         while self.running:
             self.draw_screen(stdscr)

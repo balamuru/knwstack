@@ -35,7 +35,21 @@ python generator.py
 
 This will open a color-coded menu where you can trigger each path (Nominal, Hot, Warm, Cold) as many times as you like without restarting.
 
-### Execution Path Mapping
+## 4. Run Automated Test Suite
+
+To verify the internal logic of the rules without running the full engine/NATS, you can use the automated test suite:
+
+```bash
+cd examples/smart_building
+pytest tests/test_rules.py
+```
+
+This will validate:
+- **Reflex Logic**: Immediate shutdown on fire.
+- **Tactical Logic**: Windowed averaging and cooling triggers.
+- **Strategic Logic**: Complex anomaly detection for LLM prompts.
+
+## 5. Performance Benchmarking
 The sample generator provides 4 scenarios that demonstrate how events flow through the Split-Brain:
 
 1.  **🟢 Nominal Telemetry**: **Baseline Ingestion**. Fills the state windows but does not trigger an action.

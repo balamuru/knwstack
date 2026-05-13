@@ -1,23 +1,25 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from knwstack.engine.router import build_engine
+from knwstack.engine.router import KnwStackEngine
 
 def test_engine_builder_subjects():
-    # Test that build_engine correctly extracts subjects from different input types
-    # We use a side_effect to return a real NatsSource instance so Pathway's type checking passes
+    # Test that KnwStackEngine correctly extracts subjects from different input types
     from knwstack.connectors.nats_connector import NatsSource
     
     with patch("knwstack.engine.router.NatsSource", side_effect=NatsSource) as mock_source:
         # 1. String input
-        build_engine(inputs="test.>", output_subject="out")
+        engine = KnwStackEngine(inputs="test.>", output_subject="out")
+        engine.build()
         mock_source.assert_called_with("nats://localhost:4222", ["test.>"], jetstream=False)
         
         # 2. List input
-        build_engine(inputs=["a", "b"], output_subject="out")
+        engine = KnwStackEngine(inputs=["a", "b"], output_subject="out")
+        engine.build()
         mock_source.assert_called_with("nats://localhost:4222", ["a", "b"], jetstream=False)
         
         # 3. Dict input
-        build_engine(inputs={"c": "mode1", "d": "mode2"}, output_subject="out")
+        engine = KnwStackEngine(inputs={"c": "mode1", "d": "mode2"}, output_subject="out")
+        engine.build()
         mock_source.assert_called_with("nats://localhost:4222", ["c", "d"], jetstream=False)
 
 @pytest.mark.asyncio
