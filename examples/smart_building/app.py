@@ -64,10 +64,10 @@ def anomaly_strategic(events):
         return None
         
     logger.info(f"🧠 Anomalous power/temp correlation detected in {building}. Dispatching to LLM.")
-    messages = [{
-        "role": "user",
-        "content": f"The HVAC system in {building} is drawing over 10kW of power, but the room temperature is quite low. Telemetry: {anomalies}. Diagnosis?"
-    }]
+    messages = [
+        {"role": "system", "content": "You are a concise smart building analyst. Provide a 1-2 sentence technical diagnosis of anomalies."},
+        {"role": "user", "content": f"The HVAC system in {building} is drawing over 10kW of power, but the room temperature is quite low. Telemetry: {anomalies}. Diagnosis?"}
+    ]
     
     return {
         "model": "gpt-4o-mini",
@@ -84,7 +84,7 @@ def fire_analysis_strategic(events):
             return {
                 "model": "gpt-4o-mini",
                 "messages": [
-                    {"role": "system", "content": "You are a smart building safety inspector."},
+                    {"role": "system", "content": "You are a concise smart building safety inspector. Provide a 1-2 sentence assessment."},
                     {"role": "user", "content": f"A fire alarm was triggered in {building}. The system has shut down the HVAC. Brief assessment?"}
                 ]
             }
