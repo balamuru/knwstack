@@ -86,18 +86,31 @@ def get_time(data) -> int:
 
 @pw.udf
 def get_key(data, subject: str) -> str:
+    """Strictly extracts a string key from the 'key' field. No subject fallbacks."""
     val = None
     try:
-        if hasattr(data, "get"):
+        # If it's a string/bytes, parse it first
+        if isinstance(data, (str, bytes)):
+            try: data = json.loads(data)
+            except: pass
+        
+        if isinstance(data, dict):
             val = data.get("key")
         else:
-            val = data["key"]
+            try: val = data["key"]
+            except: pass
     except:
         pass
         
-    if val:
-        return str(val)
-    return str(subject.split('.')[0] if subject else "unknown")
+    if val is not None:
+        s_val = str(val).strip()
+        if s_val and not s_val.startswith("Column("):
+            return s_val
+
+    # Log critical warning for missing keys - this event will be lumped into 'unknown'
+    # and likely averaged with other key-less events, polluting their state.
+    logger.critical(f"🚨 MISSING KEY for event on {subject}! Mandatory 'key' field not found. Data: {data}")
+    return "unknown"
 
 def run_tactical(events_list: list, topic: str, model_cfg: dict, output_subject: str) -> dict:
     """Core logic for the Warm Path (Tactical)."""
@@ -118,7 +131,13 @@ def run_tactical(events_list: list, topic: str, model_cfg: dict, output_subject:
                 pass
         py_events.append((s, d))
     
-    logger.info(f"🟠 [WARM] Evaluating Tactical Model '{model_cfg['func'].__name__}' for {topic} (Window: {len(py_events)} events)")
+    # Identify the partition key for logging
+    partition_key = "unknown"
+    if py_events:
+        _, first_data = py_events[0]
+        partition_key = first_data.get("key", topic.split('.')[0])
+
+    logger.info(f"🟠 [WARM] Evaluating Tactical Model '{model_cfg['func'].__name__}' for {partition_key} (Window: {len(py_events)} events)")
     action = model_cfg["func"](py_events)
     if action:
         logger.warning(f"   ∟ [WARM] Outcome: ACTION TRIGGERED -> {action}")
@@ -145,21 +164,27 @@ def run_strategic(events_list: list, topic: str, prompt_cfg: dict, output_subjec
                 pass
         py_events.append((s, d))
     
-    logger.info(f"🔵 [COLD] Evaluating Strategic Prompt '{prompt_cfg['func'].__name__}' for {topic} (Window: {len(py_events)} events)")
+    # Identify the partition key for logging
+    partition_key = "unknown"
+    if py_events:
+        _, first_data = py_events[0]
+        partition_key = first_data.get("key", topic.split('.')[0])
+
+    logger.info(f"🔵 [COLD] Evaluating Strategic Prompt '{prompt_cfg['func'].__name__}' for {partition_key} (Window: {len(py_events)} events)")
     messages = prompt_cfg["func"](py_events)
     if not messages: 
-        logger.debug("   ∟ [COLD] Outcome: No anomalies detected")
+        logger.debug(f"   ∟ [COLD] Outcome ({partition_key}): No anomalies detected")
         return {}
     
     from litellm import completion
     import asyncio
     try:
-        logger.warning(f"   ∟ [COLD] Outcome: DISPATCHING TO LLM -> {messages.get('model', 'gpt-4o-mini')}")
+        logger.warning(f"   ∟ [COLD] Outcome ({partition_key}): DISPATCHING TO LLM -> {messages.get('model', 'gpt-4o-mini')}")
         # Use synchronous completion as Pathway's apply/reduce are synchronous
         res = completion(model=messages.get("model", "gpt-4o-mini"), messages=messages["messages"])
         content = res.choices[0].message.content
-        logger.info(f"✅ [COLD] Strategic Path: LLM Diagnosis received: {content}")
-        return {"subject": f"{output_subject}.strategic", "data": {"reasoning": content, "source_events": len(py_events)}}
+        logger.info(f"✅ [COLD] Strategic Path ({partition_key}): LLM Diagnosis received: {content}")
+        return {"subject": f"{output_subject}.strategic", "data": {"reasoning": content, "source_events": len(py_events), "key": partition_key}}
     except Exception as e:
         logger.error(f"❌ [COLD] Strategic LLM Error: {e}")
         return {}
@@ -257,10 +282,10 @@ def build_engine(nats_url: str = "nats://localhost:4222", inputs: Union[str, Dic
         strategic_fn = partial(run_strategic, topic=topic, prompt_cfg=prompt_cfg, output_subject=output_subject)
         
         # KEY FIX: Pack subject and data into a tuple column for AI analysis
-        model_table = model_table.with_columns(
-            event_tuple=pw.apply(lambda s, d: (s, d), model_table.subject, model_table.data)
+        prompt_table = prompt_table.with_columns(
+            event_tuple=pw.apply(lambda s, d: (s, d), prompt_table.subject, prompt_table.data)
         )
-        strategic_result = model_table.groupby(model_table.key).windowby(model_table.time, window=window).reduce(
+        strategic_result = prompt_table.groupby(prompt_table.key).windowby(prompt_table.time, window=window).reduce(
             result=pw.apply(strategic_fn, pw.reducers.tuple(pw.this.event_tuple))
         )
         cold_result = strategic_result.filter(pw.apply(is_valid, strategic_result.result))

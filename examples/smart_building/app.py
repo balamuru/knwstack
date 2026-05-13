@@ -31,13 +31,13 @@ def fire_alarm_reflex(events):
 def temperature_tactical(events):
     """Calculates rolling averages over a 5-second sliding window."""
     temps = []
-    building = "unknown"
-    for topic, data in events:
-        if "temperature" not in data: continue
-        building = data.get("key", topic.split(".")[0])
-        temps.append(data.get("temperature", 22.0))
-        
-    if len(temps) > 0:
+    # With strict engine partitioning, all events in this window belong to the same building.
+    # We just need to grab the key from the first event.
+    building = events[0][1].get("key", "unknown") if events else "unknown"
+    
+    for _, data in events:
+        if "temperature" in data:
+            temps.append(data["temperature"])
         avg_temp = sum(temps) / len(temps)
         if avg_temp > 28.0:
             logger.warning(f"⚠️ [WARM] High average temperature detected in {building} ({avg_temp:.1f}°C) over {len(temps)} samples. Increasing cooling.")
