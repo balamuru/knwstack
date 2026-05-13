@@ -27,21 +27,6 @@ Traditional streaming (Kafka/Flink) is built for throughput, not intelligence. T
 *   **Smart Infrastructure**: React to floor alarms instantly while reasoning about building-wide security protocols.
 *   **FinTech**: Execute local risk-checks on market ticks while a Strategic path plans long-term hedging.
 
-### 🚫 What it is NOT for
-*   **Data Lakes**: If you need to archive petabytes of history for years, use Kafka or S3.
-*   **Batch Processing**: If you are calculating 3-year averages for 1M sensors, use Spark or Polars.
-*   **Simple CRUD**: For standard web forms and profile pages, use FastAPI or Django.
-
-### ⚖️ Comparison
-
-| Feature | KnwStack | Confluent (Kafka) | Redpanda | LangChain |
-| :--- | :--- | :--- | :--- | :--- |
-| **Primary Goal** | **AI Routing** | Data Persistence | Fast Ingestion | Agent Logic |
-| **Split-Brain** | **Native (Hot/Cold)** | ❌ (Manual Setup) | ❌ (Manual Setup) | ❌ (Synchronous) |
-| **Latency Focus** | **Sub-10ms** | 100ms+ | 10ms - 50ms | Seconds (API) |
-| **Infrastructure** | Single Binary (NATS) | Complex (JVM/Zoo) | Single Binary | Library |
-| **Programming** | Python Decorators | Java/Scala Heavy | Kafka API | Chains/Graphs |
-
 ---
 
 ## 🚀 Quick Start
@@ -67,15 +52,13 @@ python app.py --log INFO
 ```
 
 **Optional: Enable Monitoring**
-To enable the background metrics server:
-```bash
-python app.py --dashboard --port 9090
-```
-Then view metrics at: `http://localhost:9090/metrics`
+*   **Web Metrics Only**: `python app.py --dashboard` (View at `/metrics`)
+*   **Terminal Stats Only**: `python app.py --stats` (Classic flickering UI)
 
-In a second terminal, trigger events with the interactive generator:
+**High-Throughput Stress Test**
+Slam the app with 100 concurrent streams to test scalability:
 ```bash
-python generator.py
+python generator.py --stress --duration 30 --workers 100
 ```
 
 ---
@@ -86,9 +69,9 @@ For deep dives on architecture, design decisions, and full API documentation, se
 
 ### Key Sections:
 *   **[Split-Brain Architecture](docs/handbook.md#1-the-split-brain-architecture)**: How we decouple speed from intelligence.
-*   **[Why this Stack?](docs/handbook.md#2-why-this-stack-design-decisions)**: Why we chose NATS, Pathway, and LiteLLM.
+*   **[Operational Modes](docs/handbook.md#6-observability--operational_modes)**: Headless, Dashboard, and Stats modes.
+*   **[Stress Testing](docs/handbook.md#64-stress-testing--benchmarking)**: How to benchmark the engine.
 *   **[Developer API](docs/handbook.md#3-developer-api-reference)**: Using decorators to build your first app.
-*   **[Testing Guide](docs/handbook.md#5-testing--quality-assurance)**: Running the automated test suite.
 
 ---
 

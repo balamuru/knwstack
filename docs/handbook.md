@@ -92,25 +92,34 @@ def analyze_cause(events):
 
 ## 6. Observability & Operational Modes
 
-KnwStack supports two distinct operational modes to balance development visibility with production performance.
+KnwStack supports three distinct operational modes to balance development visibility with production performance.
 
 ### 6.1 Headless Mode (Production)
 By default, the `KnwStackRunner` executes in **Headless Mode**. This is a silent, high-performance mode suitable for background services and containerized deployments. No web server or terminal UI is launched.
 
-### 6.2 Dashboard Mode (Development/Observability)
-When launched with `--dashboard`, KnwStack activates its monitoring layer. 
+### 6.2 Dashboard Mode (Web Observability)
+When launched with `--dashboard`, KnwStack activates a Prometheus-compatible metrics server at `http://localhost:9090/metrics`. In this mode, the terminal remains clean and silent (thanks to our internal silence patch).
 
-> [!NOTE]
-> In the Community Edition, Dashboard Mode provides a **Prometheus Metrics Server** and a clean, silent terminal. The visual interactive graph is an enterprise-only feature.
+### 6.3 Stats Mode (Terminal Observability)
+When launched with `--stats`, KnwStack enables the classic Pathway terminal UI. This provides real-time flickering statistics directly in your console. No web server is launched in this mode.
 
-*   **Endpoint**: `http://localhost:9090/metrics`
-*   **Log Narrative**: Even with terminal UI suppressed, KnwStack provides a transparent "narrative" of every event in your standard logs:
+### 6.4 Stress Testing & Benchmarking
+KnwStack includes a dedicated stress testing mode in the generator to verify framework performance. It slams the engine with concurrent nominal telemetry while bypassing LLM calls.
+
+*   **Command**: `python generator.py --stress --workers 100`
+*   **Metric Polling**: The generator will automatically poll the engine's `/metrics` endpoint to display real-time throughput and internal latency.
+
+> [!TIP]
+> On a standard developer machine, KnwStack typically sustains **~1,800 msg/s** across 100 concurrent tenant streams.
+
+### 6.5 Log Narrative
+Even in silent modes, KnwStack provides a transparent "narrative" of every event:
     *   `⚡ [INGEST]`: A raw event enters the system.
     *   `   ∟ [HOT]`: Reflex path evaluation.
     *   `🟠 [WARM]`: Tactical path windowed evaluation (CEP).
     *   `🔵 [COLD]`: Strategic path LLM dispatch.
 
-### 6.3 Tuning Verbosity
+### 6.5 Tuning Verbosity
 Run your app with `--log DEBUG` to see the full dataflow state, or `INFO` for the high-level narrative.
 
 ---

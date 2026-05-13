@@ -132,18 +132,30 @@ class KnwStackRunner:
     def __init__(self, engine: KnwStackEngine):
         self.engine = engine
 
-    def run(self, dashboard: bool = False, port: int = 9090):
-        """Executes the engine with optional monitoring."""
+    def run(self, dashboard: bool = False, stats: bool = False, port: int = 9090):
+        """Executes the engine with optional monitoring.
+        
+        Args:
+            dashboard: Enable the Prometheus metrics server (Web).
+            stats: Enable the classic terminal UI (Stats).
+            port: Port for the metrics server.
+        """
         # 1. Build the dataflow graph
         self.engine.build()
 
         # 2. Configure execution mode
-        if dashboard:
+        if stats:
+            # CLASSIC MODE: Show terminal UI, no web server
+            logger.info("📊 KnwStack Engine started in STATS mode (Terminal UI enabled).")
+            pw.run(monitoring_level=pw.MonitoringLevel.ALL, with_http_server=False)
+            
+        elif dashboard:
+            # DASHBOARD MODE: Web metrics server, silent terminal
             import os
             from contextlib import contextmanager
             import pathway.internals.monitoring
             
-            logger.info(f"📊 Monitoring Webserver enabled at http://localhost:{port} (Terminal UI disabled)")
+            logger.info(f"📊 KnwStack Engine started in DASHBOARD mode (Web server at http://localhost:{port}/metrics).")
             
             # SILENCE PATCH: Suppress the terminal dashboard
             @contextmanager
@@ -154,8 +166,10 @@ class KnwStackRunner:
             os.environ["PATHWAY_WEBSERVER_PORT"] = str(port)
             os.environ["PATHWAY_MONITORING_HTTP_PORT"] = str(port)
             pw.run(monitoring_level=pw.MonitoringLevel.ALL, with_http_server=True)
+            
         else:
-            logger.info("🚀 KnwStack Engine started in HEADLESS mode.")
+            # HEADLESS MODE: Silent terminal, no web server
+            logger.info("🚀 KnwStack Engine started in HEADLESS mode (Production).")
             pw.run(monitoring_level=pw.MonitoringLevel.NONE, with_http_server=False)
 
 # ==========================================

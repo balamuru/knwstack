@@ -19,6 +19,7 @@ class GeneratorTUI:
             ("🟠 High Temp        ", self.dispatch_high_temp, "Expected: TACTICAL ALERT"),
             ("🔵 CEP: Anomaly Correlation", self.dispatch_anomaly, "Expected: STRATEGIC AI (Fuses Power + Temp)"),
             ("🏢 Campus Simulation", self.dispatch_campus_simulation, "Expected: NORMAL/HOT/COLD"),
+            ("🚀 MEGA-STRESS TEST", self.dispatch_mega_stress, "High-Concurrency GIL-Bypass"),
         ]
 
     def add_log(self, msg):
@@ -166,12 +167,98 @@ class GeneratorTUI:
             
             await asyncio.sleep(0.02)
 
+    async def dispatch_mega_stress(self):
+        self.add_log("🚀 DISPATCH: MEGA-STRESS TEST (Horizontal Scale)")
+        self.add_log("   Starting 8 processes / 100 workers / 5s burst...")
+        # Launch as background task to avoid blocking TUI
+        asyncio.create_task(run_stress_test(
+            self.nc, duration=5, workers=100, processes=8, 
+            log_func=self.add_log
+        ))
+
+async def run_stress_test(nc, duration=30, workers=50, processes=4, log_func=None):
+    """Slams the app with concurrent traffic using multiple processes to bypass GIL."""
+    import multiprocessing
+    import httpx
+    
+    msg = f"🚀 MEGA-STRESS: Spawning {processes} processes with {workers} workers each for {duration}s..."
+    if log_func: log_func(msg)
+    else: print(msg)
+    
+    start_time = time.time()
+    
+    def process_entrypoint(p_id, num_workers, dur):
+        async def run():
+            from nats.aio.client import Client as NATS
+            nc = NATS()
+            await nc.connect("nats://localhost:4222")
+            
+            tasks = []
+            for i in range(num_workers):
+                async def worker(w_id):
+                    b_id = f"p{p_id}_w{w_id}"
+                    while time.time() - start_time < dur:
+                        payload = {"t": 22.0, "p": 2.5, "k": b_id, "ts": int(time.time() * 1000)}
+                        await nc.publish(f"stress.{b_id}", json.dumps(payload).encode())
+                tasks.append(asyncio.create_task(worker(i)))
+            
+            await asyncio.sleep(dur)
+            await nc.drain()
+        
+        asyncio.run(run())
+
+    pool = []
+    for i in range(processes):
+        p = multiprocessing.Process(target=process_entrypoint, args=(i, workers, duration))
+        p.start()
+        pool.append(p)
+
+    # Monitor metrics
+    while any(p.is_alive() for p in pool):
+        await asyncio.sleep(5)
+        elapsed = time.time() - start_time
+        try:
+            async with httpx.AsyncClient() as client:
+                res = await client.get("http://localhost:9090/metrics", timeout=1.0)
+                if res.status_code == 200:
+                    lines = res.text.split("\n")
+                    latency = "N/A"
+                    for line in lines:
+                        if line.startswith("input_latency_ms"):
+                            latency = line.split(" ")[1]
+                    status = f"   [+{int(elapsed)}s] Engine Latency: {latency}ms"
+                    if log_func: log_func(status)
+                    else: print(status)
+        except:
+            pass
+
+    for p in pool:
+        p.join()
+    
+    final_msg = "✅ MEGA-STRESS COMPLETE."
+    if log_func: log_func(final_msg)
+    else: print(f"\n{final_msg}")
+
 async def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stress", action="store_true", help="Run high-throughput stress test")
+    parser.add_argument("--workers", type=int, default=50, help="Workers per process")
+    parser.add_argument("--processes", type=int, default=4, help="Number of parallel processes")
+    parser.add_argument("--duration", type=int, default=30, help="Duration in seconds")
+    args = parser.parse_args()
+
     nc = NATS()
     try:
         await nc.connect("nats://localhost:4222")
     except Exception as e:
         print(f"❌ Failed to connect to NATS: {e}")
+        return
+
+    if args.stress:
+        try:
+            await run_stress_test(nc, duration=args.duration, workers=args.workers, processes=args.processes)
+        finally:
+            await nc.drain()
         return
 
     tui = GeneratorTUI(nc)
@@ -195,4 +282,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        print(f"❌ Terminal Error: {e}")
+        import traceback
+        print(f"❌ Error: {e}")
+        traceback.print_exc()

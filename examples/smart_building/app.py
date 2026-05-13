@@ -128,14 +128,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dashboard", 
         action="store_true", 
-        help="Enable the Pathway Monitoring Dashboard (Web UI)"
+        help="Enable the Pathway Metrics Server (Web UI at /metrics)"
+    )
+
+    parser.add_argument(
+        "--stats", 
+        action="store_true", 
+        help="Enable the Classic Terminal UI (flickering stats)"
     )
     
     parser.add_argument(
         "--port", 
         type=int, 
         default=9090, 
-        help="Port for the Monitoring Dashboard (default: 9090)"
+        help="Port for the Metrics Server (default: 9090)"
     )
     
     args = parser.parse_args()
@@ -145,6 +151,6 @@ if __name__ == "__main__":
     runner = KnwStackRunner(engine)
     
     try:
-        runner.run(dashboard=args.dashboard, port=args.port)
+        runner.run(dashboard=args.dashboard, stats=args.stats, port=args.port)
     except KeyboardInterrupt:
         logger.info("\nShutting down KnwStack Engine...")

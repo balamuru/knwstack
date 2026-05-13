@@ -83,5 +83,19 @@ Core NATS is inherently Push-based. To integrate this with Pathway, we implement
 
 The "Narrative" logs are implemented using a custom `logging` wrapper that inspects the `path_type` of the rule being executed. This allows us to inject the `⚡ [INGEST]` and `🟠 [WARM]` labels at the precise moment the router dispatches a rule, providing a visual trace of the "Split-Brain" in action.
 
+## 5. Scaling to Millions (The Performance Ceiling)
+
+During our "Mega-Stress" tests, KnwStack demonstrated its ability to ingest massive event bursts. However, handling **Millions of Events per Second** while maintaining sub-second latency requires a transition from "Single-Node Dev" to "Distributed Production".
+
+### 5.1 Horizontal Logic Scaling
+The primary bottleneck in a Python-based engine is the GIL and UDF execution time. To scale logic:
+*   **Pathway Clusters**: Deploy KnwStack across a Pathway cluster to distribute the dataflow graph across multiple CPUs and nodes.
+*   **NATS Partitioning**: Use NATS JetStream partitions to load-balance traffic across multiple independent KnwStack "Logic Pods".
+
+### 5.2 Optimizing the "Split-Brain"
+For high-frequency paths:
+*   **Native Rules**: Move critical Hot Path (Reflex) logic into native Pathway expressions (avoiding Python UDFs where possible).
+*   **Batching**: The engine automatically batches events, but increasing the `max_expression_batch_size` in the config can further improve throughput at the cost of slight latency increase.
+
 ---
 *Technical Deep Dive: May 2026*
