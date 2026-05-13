@@ -4,6 +4,8 @@ import random
 import argparse
 import curses
 import time
+import httpx
+import psutil
 from nats.aio.client import Client as NATS
 
 class GeneratorTUI:
@@ -13,6 +15,12 @@ class GeneratorTUI:
         self.running = True
         self.selected_index = 0
         self.log_offset = 0
+        self.metrics = {
+            "latency": "N/A",
+            "throughput": 0,
+            "memory": "N/A",
+            "total_sent": 0
+        }
         self.options = [
             ("🟢 Nominal Telemetry", self.dispatch_telemetry, "Expected: SILENT (18-28°C)"),
             ("🔴 Fire Alarm       ", self.dispatch_fire_alarm, "Expected: REFLEX ACTION"),
@@ -39,6 +47,7 @@ class GeneratorTUI:
                 "timestamp": int(time.time() * 1000)
             }
             await self.nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
+            self.metrics["total_sent"] += 1
             await asyncio.sleep(0.05)
         await self.nc.publish("heartbeat", b"{}")
         self.add_log("✅ Nominal dispatch complete.")
@@ -49,6 +58,7 @@ class GeneratorTUI:
         payload = {"type": "fire", "zone": "lobby"}
         await self.nc.publish("bldg1.hvac.alarm", json.dumps(payload).encode())
         await self.nc.publish("heartbeat", b"{}")
+        self.metrics["total_sent"] += 1
         self.add_log("✅ Fire alarm dispatch complete.")
 
     async def dispatch_high_temp(self):
@@ -62,6 +72,7 @@ class GeneratorTUI:
                 "timestamp": int(time.time() * 1000)
             }
             await self.nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
+            self.metrics["total_sent"] += 1
             await asyncio.sleep(0.05)
         await self.nc.publish("heartbeat", b"{}")
         self.add_log("✅ High temp dispatch complete.")
@@ -77,6 +88,7 @@ class GeneratorTUI:
                 "timestamp": int(time.time() * 1000)
             }
             await self.nc.publish("bldg1.hvac.telemetry", json.dumps(payload).encode())
+            self.metrics["total_sent"] += 1
             await asyncio.sleep(0.05)
         await self.nc.publish("heartbeat", b"{}")
         self.add_log("✅ Anomaly dispatch complete.")
@@ -96,6 +108,7 @@ class GeneratorTUI:
                     "timestamp": int(time.time() * 1000)
                 }
                 await self.nc.publish("campus.telemetry", json.dumps(payload).encode())
+                self.metrics["total_sent"] += 1
                 await asyncio.sleep(0.05)
         await self.nc.publish("heartbeat", b"{}")
         self.add_log("✅ Campus simulation complete.")
@@ -128,11 +141,98 @@ class GeneratorTUI:
         for i, log in enumerate(visible_logs):
             stdscr.addstr(log_start_y + 2 + i, 6, log[:w-10])
 
+        # Performance HUD
+        self.draw_performance_box(stdscr, h, w)
+
         # Footer
         footer = f" NATS: Connected | Log: {len(self.logs)} events | 'Q' to Quit "
         stdscr.addstr(h - 2, (w - len(footer)) // 2, footer, curses.color_pair(1))
         
         stdscr.refresh()
+
+    def draw_performance_box(self, stdscr, h, w):
+        """Draws a dedicated performance monitoring box."""
+        box_h, box_w = 8, 45
+        start_x = w - box_w - 4
+        if start_x < 0: return # Too narrow
+        start_y = 4
+        
+        # Header
+        stdscr.addstr(start_y - 1, start_x, "📊 PERFORMANCE HUD (Pathway)", curses.A_BOLD)
+        
+        # Border
+        stdscr.addstr(start_y, start_x, "+" + "-" * (box_w-2) + "+")
+        for i in range(1, box_h - 1):
+            stdscr.addstr(start_y + i, start_x, "|")
+            stdscr.addstr(start_y + i, start_x + box_w - 1, "|")
+        stdscr.addstr(start_y + box_h - 1, start_x, "+" + "-" * (box_w-2) + "+")
+        
+        # Latency with color warning
+        lat = self.metrics["latency"]
+        try:
+            # Handle non-numeric latency
+            if lat in ["N/A", "Offline"]:
+                val = 0
+                color = curses.color_pair(6)
+            else:
+                val = float(lat)
+                color = curses.color_pair(2) if val > 500 else curses.color_pair(1)
+        except (ValueError, TypeError):
+            val = 0
+            color = curses.color_pair(6)
+            lat = "Error"
+
+        stdscr.addstr(start_y + 1, start_x + 2, "Engine Latency: ")
+        stdscr.addstr(f"{lat} ms", color | curses.A_BOLD)
+        
+        stdscr.addstr(start_y + 2, start_x + 2, f"Total Events:   {self.metrics['total_sent']:,}")
+        stdscr.addstr(start_y + 3, start_x + 2, f"Throughput:     {self.metrics['throughput']:,} msg/s")
+        stdscr.addstr(start_y + 4, start_x + 2, f"Heap Usage:     {self.metrics['memory']} MB")
+        
+        # Engine Load Visual
+        load_pct = min(100, int(val / 10)) if val > 0 else 0
+        bar_w = box_w - 18
+        filled = int(bar_w * (load_pct / 100))
+        stdscr.addstr(start_y + 6, start_x + 2, "Engine Load: [")
+        stdscr.addstr("█" * filled, curses.color_pair(2) if load_pct > 70 else curses.color_pair(1))
+        stdscr.addstr(" " * (bar_w - filled) + "]")
+
+    async def poll_metrics(self):
+        """Background task to fetch real-time metrics from Pathway."""
+        import httpx
+        import psutil
+        last_total = 0
+        while self.running:
+            try:
+                # 1. Fetch Pathway Metrics
+                async with httpx.AsyncClient() as client:
+                    res = await client.get("http://localhost:9090/metrics", timeout=0.5)
+                    if res.status_code == 200:
+                        lines = res.text.split("\n")
+                        max_rows = 0
+                        for line in lines:
+                            if line.startswith("input_latency_ms"):
+                                self.metrics["latency"] = line.split(" ")[1]
+                            if "_rows_positive" in line and not line.startswith("#"):
+                                try:
+                                    val = int(float(line.split(" ")[1]))
+                                    if val > max_rows: max_rows = val
+                                except: pass
+                        
+                        # Throughput calculation
+                        if last_total > 0:
+                            self.metrics["throughput"] = max_rows - last_total
+                        last_total = max_rows
+                        self.metrics["total_sent"] = max(self.metrics["total_sent"], max_rows)
+                
+                # 2. Fetch Process Memory (app.py)
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    if proc.info['cmdline'] and "app.py" in " ".join(proc.info['cmdline']):
+                        self.metrics["memory"] = f"{proc.memory_info().rss / 1024 / 1024:.1f}"
+                        break
+            except Exception as e:
+                self.metrics["latency"] = "Offline"
+            await asyncio.sleep(1)
 
     async def run(self, stdscr):
         curses.start_color()
@@ -146,6 +246,9 @@ class GeneratorTUI:
         stdscr.nodelay(True)
         stdscr.keypad(True)
         curses.curs_set(0)
+
+        # Start background tasks
+        asyncio.create_task(self.poll_metrics())
 
         while self.running:
             self.draw_screen(stdscr)
@@ -173,10 +276,10 @@ class GeneratorTUI:
         # Launch as background task to avoid blocking TUI
         asyncio.create_task(run_stress_test(
             self.nc, duration=5, workers=100, processes=8, 
-            log_func=self.add_log
+            log_func=self.add_log, metrics_ref=self.metrics
         ))
 
-async def run_stress_test(nc, duration=30, workers=50, processes=4, log_func=None):
+async def run_stress_test(nc, duration=30, workers=50, processes=4, log_func=None, metrics_ref=None):
     """Slams the app with concurrent traffic using multiple processes to bypass GIL."""
     import multiprocessing
     import httpx
@@ -213,24 +316,9 @@ async def run_stress_test(nc, duration=30, workers=50, processes=4, log_func=Non
         p.start()
         pool.append(p)
 
-    # Monitor metrics
+    # Wait for processes to finish
     while any(p.is_alive() for p in pool):
-        await asyncio.sleep(5)
-        elapsed = time.time() - start_time
-        try:
-            async with httpx.AsyncClient() as client:
-                res = await client.get("http://localhost:9090/metrics", timeout=1.0)
-                if res.status_code == 200:
-                    lines = res.text.split("\n")
-                    latency = "N/A"
-                    for line in lines:
-                        if line.startswith("input_latency_ms"):
-                            latency = line.split(" ")[1]
-                    status = f"   [+{int(elapsed)}s] Engine Latency: {latency}ms"
-                    if log_func: log_func(status)
-                    else: print(status)
-        except:
-            pass
+        await asyncio.sleep(1)
 
     for p in pool:
         p.join()

@@ -136,40 +136,39 @@ class KnwStackRunner:
         """Executes the engine with optional monitoring.
         
         Args:
-            dashboard: Enable the Prometheus metrics server (Web).
+            dashboard: Enable the Prometheus metrics server (Web) + Silence Terminal.
             stats: Enable the classic terminal UI (Stats).
             port: Port for the metrics server.
         """
+        import os
+        from contextlib import contextmanager
+        
         # 1. Build the dataflow graph
         self.engine.build()
 
-        # 2. Configure execution mode
-        if stats:
-            # CLASSIC MODE: Show terminal UI, no web server
-            logger.info("📊 KnwStack Engine started in STATS mode (Terminal UI enabled).")
-            pw.run(monitoring_level=pw.MonitoringLevel.ALL, with_http_server=False)
-            
-        elif dashboard:
-            # DASHBOARD MODE: Web metrics server, silent terminal
-            import os
-            from contextlib import contextmanager
+        # 2. Configure Port environment variables
+        os.environ["PATHWAY_WEBSERVER_PORT"] = str(port)
+        os.environ["PATHWAY_MONITORING_HTTP_PORT"] = str(port)
+
+        # 3. Determine monitoring configuration
+        if dashboard and not stats:
+            # DASHBOARD MODE: Web metrics server, SILENT terminal
             import pathway.internals.monitoring
-            
-            logger.info(f"📊 KnwStack Engine started in DASHBOARD mode (Web server at http://localhost:{port}/metrics).")
-            
-            # SILENCE PATCH: Suppress the terminal dashboard
             @contextmanager
             def noop_live(*args, **kwargs): yield
             pathway.internals.monitoring.Live = noop_live
-
-            # Use environment variables for max compatibility
-            os.environ["PATHWAY_WEBSERVER_PORT"] = str(port)
-            os.environ["PATHWAY_MONITORING_HTTP_PORT"] = str(port)
+            
+            logger.info(f"📊 KnwStack Engine: DASHBOARD mode (Web server at http://localhost:{port}/metrics).")
+            pw.run(monitoring_level=pw.MonitoringLevel.ALL, with_http_server=True)
+            
+        elif stats:
+            # STATS MODE: Terminal UI + Web metrics server in background
+            logger.info(f"📊 KnwStack Engine: STATS mode (Terminal UI + Web server at port {port}).")
             pw.run(monitoring_level=pw.MonitoringLevel.ALL, with_http_server=True)
             
         else:
-            # HEADLESS MODE: Silent terminal, no web server
-            logger.info("🚀 KnwStack Engine started in HEADLESS mode (Production).")
+            # HEADLESS MODE: Silent, no web server unless port is specifically used (optional)
+            logger.info("🚀 KnwStack Engine: HEADLESS mode (Production).")
             pw.run(monitoring_level=pw.MonitoringLevel.NONE, with_http_server=False)
 
 # ==========================================
