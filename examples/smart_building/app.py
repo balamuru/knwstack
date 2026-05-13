@@ -95,13 +95,6 @@ def fire_analysis_strategic(events):
             }
     return None
 
-# Engine Initialization
-# ==========================================
-engine = KnwStackEngine(
-    nats_url="nats://localhost:4222", 
-    inputs=[">"],
-    output_subject="campus.actions"
-)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -138,6 +131,12 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Skip heavy Strategic logic for raw throughput testing"
+    )
+    
+    parser.add_argument(
         "--port", 
         type=int, 
         default=9090, 
@@ -146,6 +145,14 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     setup_logging(args.log)
+
+    # Dynamic Engine Configuration
+    engine = KnwStackEngine(
+        nats_url="nats://localhost:4222",
+        inputs=[">"] if not args.benchmark else ["stress.>"],
+        output_subject="campus.actions"
+    )
+    engine.build()
     
     # Configure and run the engine via the Runner
     runner = KnwStackRunner(engine)

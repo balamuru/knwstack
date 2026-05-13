@@ -311,8 +311,12 @@ async def run_stress_test(nc, duration=30, workers=50, processes=4, log_func=Non
     def process_entrypoint(p_id, num_workers, dur):
         async def run():
             from nats.aio.client import Client as NATS
-            nc = NATS()
-            await nc.connect("nats://localhost:4222")
+            await nc.connect(
+                "nats://localhost:4222",
+                reconnect_time_wait=2,
+                max_reconnect_attempts=-1,
+                connect_timeout=10
+            )
             
             tasks = []
             for i in range(num_workers):
@@ -355,7 +359,12 @@ async def main():
 
     nc = NATS()
     try:
-        await nc.connect("nats://localhost:4222")
+        await nc.connect(
+            "nats://localhost:4222",
+            reconnect_time_wait=2,
+            max_reconnect_attempts=-1,
+            connect_timeout=10
+        )
     except Exception as e:
         print(f"❌ Failed to connect to NATS: {e}")
         return

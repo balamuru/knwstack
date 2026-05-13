@@ -19,7 +19,12 @@ class NatsSource(ConnectorSubject):
         asyncio.set_event_loop(loop)
         
         async def main():
-            nc = await nats.connect(self.nats_url)
+            nc = await nats.connect(
+                self.nats_url,
+                reconnect_time_wait=2,
+                max_reconnect_attempts=-1,
+                pending_size=128 * 1024 * 1024  # 128 MB client-side buffer
+            )
             
             if self.jetstream:
                 js = nc.jetstream()
@@ -29,18 +34,16 @@ class NatsSource(ConnectorSubject):
                     subject = msg.subject
                     data = json.loads(msg.data.decode())
                     import time
-                    # Push to Pathway with metadata and arrival timestamp
                     self.next(subject=subject, data=data, time=int(time.time() * 1000))
                 except Exception as e:
                     logger.error(f"Error processing NATS message: {e}")
 
             for sub in self.subjects:
                 if self.jetstream:
-                    # IMPLEMENTATION NOTE: In this reference architecture, we use Push-to-Pull bridging.
-                    # We subscribe (Push) and then bridge into Pathway's next() (Pull) interface.
-                    await js.subscribe(sub, cb=cb)
+                    # Higher limits to avoid Slow Consumer errors during bursts
+                    await js.subscribe(sub, cb=cb, pending_msgs_limit=1000000, pending_bytes_limit=128*1024*1024)
                 else:
-                    await nc.subscribe(sub, cb=cb)
+                    await nc.subscribe(sub, cb=cb, pending_msgs_limit=1000000, pending_bytes_limit=128*1024*1024)
             
             # Keep alive
             while True:
